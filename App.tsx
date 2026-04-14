@@ -217,10 +217,8 @@ export default function App() {
         >
           <View style={styles.compactTopRow}>
             <View style={styles.compactBrandWrap}>
-              <Typography variant="h1" style={{ fontWeight: 'bold', color: colors.text }}>Blackbook</Typography>
-              {screen !== "home" && (
-                <Typography variant="h2">{screen === "event" ? "Events" : "People"}</Typography>
-              )}
+              <Typography variant="caption">Blackbook</Typography>
+              <Typography variant="h2">{screen === "home" ? "Home" : screen === "event" ? "Events" : "People"}</Typography>
             </View>
             <View style={styles.compactTopActions}>
               <Button
@@ -244,7 +242,16 @@ export default function App() {
         </View>
       ) : (
         <View style={styles.topBar}>
-          {/* Removed 'Home' button for clarity on landing page */}
+          <View>
+            <Button
+              label="Home"
+              onPress={() => setScreen("home")}
+              variant={screen === "home" ? "primary" : "ghost"}
+              fullWidth={false}
+              size="compact"
+              style={styles.switchButton}
+            />
+          </View>
           <View style={styles.switcher}>
             <Button
               label={isGuest ? "Guest" : `@${currentUsername || "member"}`}
