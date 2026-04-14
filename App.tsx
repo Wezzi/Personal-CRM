@@ -127,7 +127,7 @@ export default function App() {
       "",
       `Signed in as: ${isGuest ? "Guest" : `@${currentUsername || "member"}`}`,
     ].join("\n");
-    const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const url = `mailto:wezim7@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     try {
       await Linking.openURL(url);
@@ -156,7 +156,7 @@ export default function App() {
       "",
       `Signed in as: ${isGuest ? "Guest" : `@${currentUsername || "member"}`}`,
     ].join("\n");
-    const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const url = `mailto:wezim7@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     try {
       await Linking.openURL(url);
