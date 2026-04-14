@@ -179,7 +179,6 @@ export function HomeScreen({ currentEvent, onOpenPeopleFilter }: HomeScreenProps
           <View style={[styles.heroRow, isCompactLayout ? styles.heroRowCompact : null]}>
             <View style={styles.heroCopy}>
               <Typography variant="caption">Black Book</Typography>
-              <Typography variant="h1">Making follow-ups with connections easier than ever.</Typography>
             </View>
             <Button
               label="Add person"
