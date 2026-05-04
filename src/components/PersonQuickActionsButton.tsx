@@ -135,9 +135,9 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
       await markPersonContactedToday(userId, person.id);
       closeMenu();
       await refreshParent();
-      Alert.alert("Updated", `${person.name} marked as contacted.`);
+      Alert.alert("Marked contacted", `${person.name} is up to date for today.`);
     } catch (error) {
-      Alert.alert("Update failed", error instanceof Error ? error.message : "Could not mark this contact.");
+      Alert.alert("Could not mark contacted", error instanceof Error ? error.message : "Could not mark this contact.");
     }
   }
 

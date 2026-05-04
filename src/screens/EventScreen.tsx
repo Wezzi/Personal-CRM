@@ -327,10 +327,13 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
 
       setEventEditorOpen(false);
       await loadEventData();
-      Alert.alert("Saved", eventEditorMode === "edit" ? "Event updated." : "Event logged.");
+      Alert.alert(
+        eventEditorMode === "edit" ? "Event updated" : "Event added",
+        eventEditorMode === "edit" ? `${name} is up to date.` : `${name} is ready for capture.`
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save event.";
-      Alert.alert("Save failed", message);
+      Alert.alert("Could not save event", message);
     } finally {
       setSavingEvent(false);
     }
@@ -375,10 +378,10 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
         onEndCurrentEvent?.();
       }
       await loadEventData();
-      Alert.alert("Deleted", `${targetEvent.name} removed. Existing interactions keep their notes.`);
+      Alert.alert("Event removed", `${targetEvent.name} is gone. Existing contact notes are still safe.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to delete event.";
-      Alert.alert("Delete failed", message);
+      Alert.alert("Could not delete event", message);
     } finally {
       setDeletingEvent(false);
       setDeleteArmedEventId(null);
@@ -398,10 +401,10 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
       setSelectedEventId(event.id);
       setSearchQuery("");
       await loadEventData();
-      Alert.alert("Event created", `${event.name} is now in your event list.`);
+      Alert.alert("Event added", `${event.name} is now in your event list.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create event.";
-      Alert.alert("Save failed", message);
+      Alert.alert("Could not add event", message);
     } finally {
       setSavingEvent(false);
     }

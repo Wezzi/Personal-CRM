@@ -140,8 +140,9 @@ export function HomeScreen({
       let eventId: string | null = null;
       const eventName = currentEvent?.name || draft.event;
       const eventCategory = currentEvent?.category || draft.eventCategory || null;
+      const eventDate = currentEvent?.eventDate || null;
       if (eventName && eventName !== "No event") {
-        const event = await getOrCreateEvent(userId, eventName, eventCategory);
+        const event = await getOrCreateEvent(userId, eventName, eventCategory, eventDate);
         eventId = event.id;
       }
 
@@ -154,10 +155,10 @@ export function HomeScreen({
 
       setCaptureOpen(false);
       await loadData();
-      Alert.alert("Saved", `${draft.name} saved to Supabase.`);
+      Alert.alert("Contact added", `${draft.name} saved${eventName && eventName !== "No event" ? ` to ${eventName}` : ""}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save interaction.";
-      Alert.alert("Save failed", message);
+      Alert.alert("Could not save contact", message);
     } finally {
       setSaving(false);
     }

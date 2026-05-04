@@ -32,7 +32,7 @@ import {
   isContactStale,
 } from "../lib/crm";
 import { colors, layout } from "../theme/tokens";
-import { openFollowUpInCalendar } from "../lib/calendar";
+import { CalendarDestination, getAvailableCalendarDestinations, openFollowUpInCalendar } from "../lib/calendar";
 import { clearPendingExternalAction, getPendingExternalAction, PendingExternalAction, setPendingExternalAction } from "../lib/externalActionFlow";
 
 type SortMode = "recent" | "stale" | "name" | "frequency";
@@ -101,10 +101,12 @@ export function PersonProfileScreen({
   const [isInteractionPickerOpen, setInteractionPickerOpen] = useState(false);
   const [pendingExternalAction, setPendingExternalActionState] = useState<PendingExternalAction | null>(null);
   const [showPendingExternalReturn, setShowPendingExternalReturn] = useState(false);
+  const [calendarPickerPerson, setCalendarPickerPerson] = useState<(typeof people)[number] | null>(null);
 
   const availableTags = useMemo(() => {
     return Array.from(new Set([...PERSON_TAG_SUGGESTIONS, ...people.flatMap((person) => person.tags)])).sort();
   }, [people]);
+  const calendarDestinationOptions = useMemo(() => getAvailableCalendarDestinations(), []);
 
   const sortLabel =
     sortMode === "name"
@@ -430,10 +432,10 @@ export function PersonProfileScreen({
       setUpdateModalOpen(false);
       setUpdatePerson(null);
       await loadProfileData();
-      Alert.alert("Update logged", `${updatePerson.name}'s timeline has been updated.`);
+      Alert.alert("Update logged", `${updatePerson.name}'s timeline is up to date.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to log update.";
-      Alert.alert("Save failed", message);
+      Alert.alert("Could not log update", message);
     } finally {
       setSaving(false);
     }
@@ -471,7 +473,11 @@ export function PersonProfileScreen({
         let eventId: string | null = null;
         const editEventName = draft.event;
         if (editEventName && editEventName !== "No event") {
-          eventId = (await getOrCreateEvent(userId, editEventName, draft.eventCategory || null)).id;
+          const editEventDate =
+            currentEvent?.name.trim().toLowerCase() === editEventName.trim().toLowerCase()
+              ? currentEvent.eventDate || null
+              : null;
+          eventId = (await getOrCreateEvent(userId, editEventName, draft.eventCategory || null, editEventDate)).id;
         }
 
         const rawNote = buildInteractionRecord(draft.whatMatters, draft.nextStep, draft.company, draft.nextFollowUpAt);
@@ -494,7 +500,7 @@ export function PersonProfileScreen({
 
         setCaptureOpen(false);
         await loadProfileData();
-        Alert.alert("Saved", `${draft.name} updated.`);
+        Alert.alert("Contact updated", `${draft.name} is ready for follow-up.`);
         return;
       }
 
@@ -533,8 +539,9 @@ export function PersonProfileScreen({
       let eventId: string | null = null;
       const eventName = currentEvent?.name || draft.event;
       const eventCategory = currentEvent?.category || draft.eventCategory || null;
+      const eventDate = currentEvent?.eventDate || null;
       if (eventName && eventName !== "No event") {
-        eventId = (await getOrCreateEvent(userId, eventName, eventCategory)).id;
+        eventId = (await getOrCreateEvent(userId, eventName, eventCategory, eventDate)).id;
       }
 
       if (!activePersonId) {
@@ -550,10 +557,10 @@ export function PersonProfileScreen({
 
       setCaptureOpen(false);
       await loadProfileData();
-      Alert.alert("Added", "Interaction added to timeline.");
+      Alert.alert("Timeline updated", selectedPerson ? `${selectedPerson.name}'s next step is saved.` : "New contact added with context.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save interaction.";
-      Alert.alert("Save failed", message);
+      Alert.alert("Could not save update", message);
     } finally {
       setSaving(false);
     }
@@ -572,10 +579,10 @@ export function PersonProfileScreen({
       const userId = await ensureSessionUserId();
       await markPersonContactedToday(userId, person.id);
       await loadProfileData();
-      Alert.alert("Updated", `${person.name} marked as contacted today.`);
+      Alert.alert("Marked contacted", `${person.name} is up to date for today.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to mark contact.";
-      Alert.alert("Update failed", message);
+      Alert.alert("Could not mark contacted", message);
     }
   }
 
@@ -672,16 +679,41 @@ export function PersonProfileScreen({
       return;
     }
 
+    setCalendarPickerPerson(person);
+  }
+
+  async function handleCalendarDestinationSelect(destination: CalendarDestination) {
+    const person = calendarPickerPerson;
+    if (!person?.nextFollowUpAt) {
+      setCalendarPickerPerson(null);
+      return;
+    }
+
+    const destinationLabel =
+      destination === "device"
+        ? "device calendar"
+        : destination === "google"
+          ? "Google Calendar"
+          : destination === "outlook"
+            ? "Outlook Calendar"
+            : destination === "yahoo"
+              ? "Yahoo Calendar"
+              : ".ics download";
+
     try {
-      await markExternalActionStarted("calendar", `Follow-up for ${person.name}`);
-      await openFollowUpInCalendar({
-        name: person.name,
-        company: person.company,
-        nextFollowUpAt: person.nextFollowUpAt,
-        whatMatters: person.whatMatters,
-        nextStep: person.nextStep,
-        linkedinUrl: person.linkedinUrl,
-      });
+      setCalendarPickerPerson(null);
+      await markExternalActionStarted(destinationLabel, `Follow-up for ${person.name}`);
+      await openFollowUpInCalendar(
+        {
+          name: person.name,
+          company: person.company,
+          nextFollowUpAt: person.nextFollowUpAt,
+          whatMatters: person.whatMatters,
+          nextStep: person.nextStep,
+          linkedinUrl: person.linkedinUrl,
+        },
+        destination
+      );
     } catch (error) {
       await clearPendingExternalAction();
       setPendingExternalActionState(null);
@@ -1582,6 +1614,46 @@ export function PersonProfileScreen({
   </View>
 ) : null}
 
+        {calendarPickerPerson ? (
+          <View style={styles.confirmOverlay}>
+            <Pressable style={styles.confirmBackdrop} onPress={() => setCalendarPickerPerson(null)} />
+            <View style={styles.confirmCardWrap}>
+              <Card style={styles.confirmCard}>
+                <Typography variant="h2">Add to calendar</Typography>
+                <Typography variant="body" style={styles.confirmMeta}>
+                  Pick where to save the follow-up for {calendarPickerPerson.name}.
+                </Typography>
+                <View style={styles.calendarOptionStack}>
+                  {calendarDestinationOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      label={option.label}
+                      variant="ghost"
+                      fullWidth={false}
+                      size="compact"
+                      onPress={() => {
+                        void handleCalendarDestinationSelect(option.value);
+                      }}
+                    />
+                  ))}
+                </View>
+                <Typography variant="caption" style={styles.confirmMeta}>
+                  Google, Outlook, and Yahoo open prefilled calendar pages. Download `.ics` is the browser fallback.
+                </Typography>
+                <View style={styles.confirmActions}>
+                  <Button
+                    label="Cancel"
+                    variant="ghost"
+                    fullWidth={false}
+                    size="compact"
+                    onPress={() => setCalendarPickerPerson(null)}
+                  />
+                </View>
+              </Card>
+            </View>
+          </View>
+        ) : null}
+
         {draftPreviewPerson ? (
           <View style={styles.confirmOverlay}>
             <Pressable style={styles.confirmBackdrop} onPress={() => setDraftPreviewPerson(null)} />
@@ -1889,6 +1961,9 @@ const styles = StyleSheet.create({
   confirmActions: {
     flexDirection: "row",
     flexWrap: "wrap",
+    gap: 8,
+  },
+  calendarOptionStack: {
     gap: 8,
   },
   pickerList: {

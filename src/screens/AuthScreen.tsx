@@ -35,7 +35,7 @@ export function AuthScreen({
   const normalizedEmail = useMemo(() => email.trim().toLowerCase(), [email]);
   const normalizedCode = useMemo(() => emailCode.replace(/\s+/g, ""), [emailCode]);
   const canSendEmailCode = normalizedEmail.includes("@");
-  const canVerifyCode = sentEmail.includes("@") && normalizedCode.length > 0;
+  const canVerifyCode = sentEmail.includes("@") && normalizedCode.length >= 6;
   const isCodeSent = Boolean(sentEmail);
   const isBusy = isGoogleBusy || isEmailCodeBusy || isVerifyBusy;
 
@@ -126,7 +126,7 @@ export function AuthScreen({
                 <View style={styles.codeHeaderCopy}>
                   <Typography variant="caption">Enter email code</Typography>
                   <Typography variant="body" style={styles.helperText}>
-                    Sent to {sentEmail}
+                    Sent to {sentEmail}. Paste the code from your email below.
                   </Typography>
                 </View>
                 <Button label="Change" onPress={handleChangeEmail} variant="ghost" fullWidth={false} size="compact" disabled={isBusy} />
@@ -142,6 +142,9 @@ export function AuthScreen({
                 placeholderTextColor={colors.textTertiary}
                 style={[styles.input, styles.codeInput]}
               />
+              <Typography variant="body" style={styles.helperText}>
+                Codes can take a minute. Check junk mail if it is not in your inbox.
+              </Typography>
             </View>
           )}
 
@@ -169,7 +172,7 @@ export function AuthScreen({
             ) : (
               <>
                 <Button
-                  label="Continue"
+                  label="Verify code"
                   onPress={() => void handleVerifyEmailCode()}
                   disabled={!canVerifyCode || isBusy}
                   loading={isVerifyBusy}

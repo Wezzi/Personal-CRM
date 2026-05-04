@@ -380,15 +380,20 @@ export async function getOrCreateEvent(
   assertNoError(findError);
   if (existing) {
     const needsCategoryUpdate = normalizedCategory && existing.category !== normalizedCategory;
-    const needsDateUpdate = (existing.event_date || null) !== normalizedEventDate;
+    const needsDateUpdate = normalizedEventDate !== null && (existing.event_date || null) !== normalizedEventDate;
 
     if (needsCategoryUpdate || needsDateUpdate) {
+      const updatePayload: Pick<EventRow, "category"> & Partial<Pick<EventRow, "event_date">> = {
+        category: normalizedCategory,
+      };
+
+      if (needsDateUpdate) {
+        updatePayload.event_date = normalizedEventDate;
+      }
+
       const { data: updated, error: updateError } = await client
         .from("events")
-        .update({
-          category: normalizedCategory,
-          event_date: normalizedEventDate,
-        })
+        .update(updatePayload)
         .eq("user_id", userId)
         .eq("id", existing.id)
         .select("id,name,category,event_date,created_at")
