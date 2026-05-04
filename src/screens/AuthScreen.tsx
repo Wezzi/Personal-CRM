@@ -57,7 +57,7 @@ export function AuthScreen({
       await sendEmailCode(normalizedEmail);
       setSentEmail(normalizedEmail);
       setEmailCode("");
-      const message = `Code sent to ${normalizedEmail}. Enter it here to continue.`;
+      const message = `Code sent to ${normalizedEmail}. Enter it here to continue. Check junk mail if it does not land in your inbox.`;
       setBanner({ text: message, tone: "success" });
     } catch (error) {
       setBanner({ text: error instanceof Error ? error.message : "Could not send the email code.", tone: "error" });
@@ -117,7 +117,7 @@ export function AuthScreen({
                 style={styles.input}
               />
               <Typography variant="body" style={styles.helperText}>
-                We will email a short code so you can sign in without leaving this screen.
+                We will email a short code so you can sign in without leaving this screen. Check junk mail if it does not show up in your inbox.
               </Typography>
             </View>
           ) : (
