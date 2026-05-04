@@ -5,7 +5,7 @@ import { SafeAreaView, StyleSheet, TextInput, View } from "react-native";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Typography } from "../components/ui/Typography";
-import { sendMagicLink, signInWithGoogle } from "../lib/auth";
+import { sendEmailCode, signInWithGoogle, verifyEmailCode } from "../lib/auth";
 import { colors, layout, radius } from "../theme/tokens";
 
 type AuthScreenProps = {
@@ -25,13 +25,19 @@ export function AuthScreen({
   onCancel,
 }: AuthScreenProps) {
   const [email, setEmail] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [sentEmail, setSentEmail] = useState("");
   const [banner, setBanner] = useState<BannerState>(authError ? { text: authError, tone: "error" } : null);
   const [isGoogleBusy, setGoogleBusy] = useState(false);
-  const [isMagicLinkBusy, setMagicLinkBusy] = useState(false);
+  const [isEmailCodeBusy, setEmailCodeBusy] = useState(false);
+  const [isVerifyBusy, setVerifyBusy] = useState(false);
 
   const normalizedEmail = useMemo(() => email.trim().toLowerCase(), [email]);
-  const canSendMagicLink = normalizedEmail.includes("@");
-  const isBusy = isGoogleBusy || isMagicLinkBusy;
+  const normalizedCode = useMemo(() => emailCode.replace(/\s+/g, ""), [emailCode]);
+  const canSendEmailCode = normalizedEmail.includes("@");
+  const canVerifyCode = sentEmail.includes("@") && normalizedCode.length > 0;
+  const isCodeSent = Boolean(sentEmail);
+  const isBusy = isGoogleBusy || isEmailCodeBusy || isVerifyBusy;
 
   async function handleGoogle() {
     try {
@@ -44,19 +50,39 @@ export function AuthScreen({
     }
   }
 
-  async function handleMagicLink() {
+  async function handleSendEmailCode() {
     try {
-      setMagicLinkBusy(true);
+      setEmailCodeBusy(true);
       setBanner(null);
-      await sendMagicLink(normalizedEmail);
-      const message = `Magic link sent to ${normalizedEmail}. Check your inbox to continue.`;
+      await sendEmailCode(normalizedEmail);
+      setSentEmail(normalizedEmail);
+      setEmailCode("");
+      const message = `Code sent to ${normalizedEmail}. Enter it here to continue.`;
       setBanner({ text: message, tone: "success" });
-      onAuthenticated?.(message);
     } catch (error) {
-      setBanner({ text: error instanceof Error ? error.message : "Could not send magic link.", tone: "error" });
+      setBanner({ text: error instanceof Error ? error.message : "Could not send the email code.", tone: "error" });
     } finally {
-      setMagicLinkBusy(false);
+      setEmailCodeBusy(false);
     }
+  }
+
+  async function handleVerifyEmailCode() {
+    try {
+      setVerifyBusy(true);
+      setBanner(null);
+      await verifyEmailCode(sentEmail, normalizedCode);
+      onAuthenticated?.("Signed in.");
+    } catch (error) {
+      setBanner({ text: error instanceof Error ? error.message : "Could not verify that code.", tone: "error" });
+    } finally {
+      setVerifyBusy(false);
+    }
+  }
+
+  function handleChangeEmail() {
+    setSentEmail("");
+    setEmailCode("");
+    setBanner(null);
   }
 
   return (
@@ -76,23 +102,48 @@ export function AuthScreen({
         </View>
 
         <Card style={styles.modeCard}>
-          <View style={styles.inputBlock}>
-            <Typography variant="caption">Email for magic link</Typography>
-            <TextInput
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="wez@example.com"
-              placeholderTextColor={colors.textTertiary}
-              style={styles.input}
-            />
-            <Typography variant="body" style={styles.helperText}>
-              Passwordless sign-in keeps people coming back without losing their progress.
-            </Typography>
-          </View>
+          {!isCodeSent ? (
+            <View style={styles.inputBlock}>
+              <Typography variant="caption">Email for sign-in code</Typography>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="wez@example.com"
+                placeholderTextColor={colors.textTertiary}
+                style={styles.input}
+              />
+              <Typography variant="body" style={styles.helperText}>
+                We will email a short code so you can sign in without leaving this screen.
+              </Typography>
+            </View>
+          ) : (
+            <View style={styles.inputBlock}>
+              <View style={styles.codeHeaderRow}>
+                <View style={styles.codeHeaderCopy}>
+                  <Typography variant="caption">Enter email code</Typography>
+                  <Typography variant="body" style={styles.helperText}>
+                    Sent to {sentEmail}
+                  </Typography>
+                </View>
+                <Button label="Change" onPress={handleChangeEmail} variant="ghost" fullWidth={false} size="compact" disabled={isBusy} />
+              </View>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="one-time-code"
+                keyboardType="number-pad"
+                value={emailCode}
+                onChangeText={setEmailCode}
+                placeholder="123456"
+                placeholderTextColor={colors.textTertiary}
+                style={[styles.input, styles.codeInput]}
+              />
+            </View>
+          )}
 
           {banner ? (
             <View
@@ -108,12 +159,30 @@ export function AuthScreen({
           ) : null}
 
           <View style={styles.actionStack}>
-            <Button
-              label="Email me a magic link"
-              onPress={() => void handleMagicLink()}
-              disabled={!canSendMagicLink || isBusy}
-              loading={isMagicLinkBusy}
-            />
+            {!isCodeSent ? (
+              <Button
+                label="Email me a sign-in code"
+                onPress={() => void handleSendEmailCode()}
+                disabled={!canSendEmailCode || isBusy}
+                loading={isEmailCodeBusy}
+              />
+            ) : (
+              <>
+                <Button
+                  label="Continue"
+                  onPress={() => void handleVerifyEmailCode()}
+                  disabled={!canVerifyCode || isBusy}
+                  loading={isVerifyBusy}
+                />
+                <Button
+                  label="Resend code"
+                  onPress={() => void handleSendEmailCode()}
+                  variant="ghost"
+                  disabled={isBusy}
+                  loading={isEmailCodeBusy}
+                />
+              </>
+            )}
             <Button
               label="Continue with Google"
               onPress={() => void handleGoogle()}
@@ -125,8 +194,8 @@ export function AuthScreen({
 
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
-              <Typography variant="caption">Magic link</Typography>
-              <Typography variant="body" style={styles.metaText}>Fast return on the same device</Typography>
+              <Typography variant="caption">Email code</Typography>
+              <Typography variant="body" style={styles.metaText}>Same screen, no browser hop</Typography>
             </View>
             <View style={styles.metaItem}>
               <Typography variant="caption">Google</Typography>
@@ -192,6 +261,16 @@ const styles = StyleSheet.create({
   inputBlock: {
     gap: 8,
   },
+  codeHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  codeHeaderCopy: {
+    flex: 1,
+    gap: 4,
+  },
   input: {
     minHeight: 52,
     borderRadius: radius.button,
@@ -201,6 +280,11 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     paddingHorizontal: 16,
     fontSize: 16,
+  },
+  codeInput: {
+    fontSize: 22,
+    letterSpacing: 0,
+    textAlign: "center",
   },
   helperText: {
     color: colors.textSecondary,

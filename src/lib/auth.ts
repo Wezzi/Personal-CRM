@@ -70,7 +70,7 @@ function normalizeAuthError(error: AuthError | Error) {
   }
 
   if (message.includes("email not confirmed")) {
-    return "Check your inbox and use the magic link we sent to finish signing in.";
+    return "Check your inbox and enter the sign-in code we sent.";
   }
 
   if (message.includes("redirect") || message.includes("callback")) {
@@ -258,7 +258,7 @@ export async function signInAsGuest() {
   }
 }
 
-export async function sendMagicLink(email: string) {
+export async function sendEmailCode(email: string) {
   const client = assertClient();
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -266,16 +266,35 @@ export async function sendMagicLink(email: string) {
     throw new Error("Enter a valid email address.");
   }
 
-  if (!authRedirectUrl) {
-    throw new Error("Missing EXPO_PUBLIC_AUTH_REDIRECT_URL. Set it to your app URL before using magic links.");
-  }
-
   const { error } = await client.auth.signInWithOtp({
     email: normalizedEmail,
     options: {
-      emailRedirectTo: authRedirectUrl,
       shouldCreateUser: true,
     },
+  });
+
+  if (error) {
+    throw new Error(normalizeAuthError(error));
+  }
+}
+
+export async function verifyEmailCode(email: string, code: string) {
+  const client = assertClient();
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedCode = code.replace(/\s+/g, "");
+
+  if (!normalizedEmail || !normalizedEmail.includes("@")) {
+    throw new Error("Enter a valid email address.");
+  }
+
+  if (!normalizedCode) {
+    throw new Error("Enter the code from your email.");
+  }
+
+  const { error } = await client.auth.verifyOtp({
+    email: normalizedEmail,
+    token: normalizedCode,
+    type: "email",
   });
 
   if (error) {
