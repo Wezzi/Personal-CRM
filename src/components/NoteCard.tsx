@@ -1,7 +1,7 @@
 
 import { StyleSheet, View, Pressable } from "react-native";
 import { useState } from "react";
-import { colors } from "../theme/tokens";
+import { useTheme, useThemedStyles } from "../theme/tokens";
 import { Card } from "./ui/Card";
 import { Typography } from "./ui/Typography";
 import { Button } from "./ui/Button";
@@ -19,6 +19,7 @@ type NoteCardProps = {
 };
 
 export function NoteCard({ item }: NoteCardProps) {
+	const styles = useThemedStyles(createStyles);
 	const [expanded, setExpanded] = useState(false);
 	const [showMenu, setShowMenu] = useState(false);
 
@@ -65,7 +66,7 @@ export function NoteCard({ item }: NoteCardProps) {
 	);
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
 	card: {
 		paddingVertical: 12,
 		paddingHorizontal: 16,

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { CurrentEventValue } from "../components/CurrentEventSheet";
 import { FloatingFab } from "../components/FloatingFab";
@@ -20,7 +21,7 @@ import {
   isContactStale,
   listPeopleInsights,
 } from "../lib/crm";
-import { colors, layout, radius } from "../theme/tokens";
+import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 import { PersonStatusMode } from "./PersonProfileScreen";
 
 type HomeScreenProps = {
@@ -32,18 +33,24 @@ type HomeScreenProps = {
 
 type SignalFilter = "all" | "tracked" | "contactedToday" | "needNudge";
 
+const HOME_CAPTURE_OPEN_STORAGE_KEY = "blackbook.home_capture_open";
+const HOME_CAPTURE_DRAFT_STORAGE_KEY = "blackbook.home_capture_draft";
+
 export function HomeScreen({
   currentEvent,
   onOpenPeopleFilter,
   showCaptureCoach = false,
   onCaptureCoachDone,
 }: HomeScreenProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [isCaptureOpen, setCaptureOpen] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [people, setPeople] = useState<Awaited<ReturnType<typeof listPeopleInsights>>>([]);
   const [isLoading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSignal, setActiveSignal] = useState<SignalFilter>("all");
+  const [hasHydratedCaptureState, setHasHydratedCaptureState] = useState(false);
 
   const recentPeople = useMemo(() => people.slice(0, 4), [people]);
   const dueTodayPeople = useMemo(
@@ -115,6 +122,38 @@ export function HomeScreen({
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function hydrateCaptureState() {
+      const savedState = await AsyncStorage.getItem(HOME_CAPTURE_OPEN_STORAGE_KEY);
+      if (isMounted && savedState === "true") {
+        setCaptureOpen(true);
+      }
+      if (isMounted) {
+        setHasHydratedCaptureState(true);
+      }
+    }
+
+    void hydrateCaptureState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    async function persistCaptureState() {
+      if (!hasHydratedCaptureState) {
+        return;
+      }
+
+      await AsyncStorage.setItem(HOME_CAPTURE_OPEN_STORAGE_KEY, isCaptureOpen ? "true" : "false");
+    }
+
+    void persistCaptureState();
+  }, [hasHydratedCaptureState, isCaptureOpen]);
 
   async function handleSaveDraft(draft: ParsedPersonDraft) {
     if (isSaving) {
@@ -355,13 +394,14 @@ export function HomeScreen({
           lockedEvent={currentEvent}
           initialMethod="manual"
           showQuickCapture
+          draftStorageKey={HOME_CAPTURE_DRAFT_STORAGE_KEY}
         />
       </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
@@ -439,7 +479,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   heroHeading: {
-    color: colors.background,
+    color: colors.onPrimary,
   },
   heroBadge: {
     borderRadius: radius.pill,
@@ -448,7 +488,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   heroBadgeText: {
-    color: colors.background,
+    color: colors.onPrimary,
   },
   bannerCard: {
     gap: 10,
@@ -470,7 +510,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.35)",
   },
   heroMetric: {
-    color: colors.background,
+    color: colors.onPrimary,
   },
   heroCaption: {
     color: "rgba(246,243,238,0.76)",

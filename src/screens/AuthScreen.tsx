@@ -6,7 +6,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Typography } from "../components/ui/Typography";
 import { sendEmailCode, signInWithGoogle, verifyEmailCode } from "../lib/auth";
-import { colors, layout, radius } from "../theme/tokens";
+import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 type AuthScreenProps = {
   authError?: string | null;
@@ -24,6 +24,8 @@ export function AuthScreen({
   onAuthenticated,
   onCancel,
 }: AuthScreenProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [email, setEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
   const [sentEmail, setSentEmail] = useState("");
@@ -217,7 +219,7 @@ export function AuthScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,

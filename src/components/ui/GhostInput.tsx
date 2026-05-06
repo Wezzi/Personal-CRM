@@ -1,20 +1,23 @@
 import { forwardRef } from "react";
 import { StyleProp, StyleSheet, TextInput, TextInputProps, TextStyle } from "react-native";
 
-import { colors, layout, typography } from "../../theme/tokens";
+import { layout, typography, useTheme, useThemedStyles } from "../../theme/tokens";
 
 type GhostInputProps = TextInputProps & {
   style?: StyleProp<TextStyle>;
 };
 
 export const GhostInput = forwardRef<TextInput, GhostInputProps>(
-  ({ style, placeholderTextColor = colors.textSecondary, ...props }, ref) => {
+  ({ style, placeholderTextColor, ...props }, ref) => {
+    const { colors } = useTheme();
+    const styles = useThemedStyles(createStyles);
+
     return (
       <TextInput
         ref={ref}
         multiline
         textAlignVertical="top"
-        placeholderTextColor={placeholderTextColor}
+        placeholderTextColor={placeholderTextColor || colors.textSecondary}
         style={[styles.input, style]}
         {...props}
       />
@@ -24,7 +27,7 @@ export const GhostInput = forwardRef<TextInput, GhostInputProps>(
 
 GhostInput.displayName = "GhostInput";
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   input: {
     ...typography.display,
     color: colors.textPrimary,

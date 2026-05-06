@@ -1,6 +1,6 @@
 import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 
-import { colors, radius } from "../theme/tokens";
+import { radius, useTheme, useThemedStyles } from "../theme/tokens";
 import { Button } from "./ui/Button";
 
 type FloatingAction = {
@@ -15,6 +15,8 @@ type FloatingActionBarProps = {
 };
 
 export function FloatingActionBar({ actions, style }: FloatingActionBarProps) {
+  const styles = useThemedStyles(createStyles);
+
   return (
     <View style={[styles.container, style]}>
       {actions.map((action) => (
@@ -31,7 +33,7 @@ export function FloatingActionBar({ actions, style }: FloatingActionBarProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   container: {
     position: "absolute",
     left: 16,

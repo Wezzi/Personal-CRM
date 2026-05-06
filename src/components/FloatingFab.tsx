@@ -1,6 +1,6 @@
 import { Pressable, StyleProp, StyleSheet, ViewStyle } from "react-native";
 
-import { colors, layout } from "../theme/tokens";
+import { layout, useTheme, useThemedStyles } from "../theme/tokens";
 import { Typography } from "./ui/Typography";
 
 type FloatingFabProps = {
@@ -11,6 +11,8 @@ type FloatingFabProps = {
 };
 
 export function FloatingFab({ onPress, style, label = "+", extended = false }: FloatingFabProps) {
+  const styles = useThemedStyles(createStyles);
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -41,7 +43,7 @@ export function FloatingFab({ onPress, style, label = "+", extended = false }: F
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   fabBase: {
     position: "absolute",
     right: 24,
@@ -71,15 +73,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   roundLabel: {
-    color: colors.background,
+    color: colors.onPrimary,
     lineHeight: 28,
     marginTop: -2,
   },
   plusLabel: {
-    color: colors.background,
+    color: colors.onPrimary,
   },
   extendedLabel: {
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: "700",
   },
   pressed: {

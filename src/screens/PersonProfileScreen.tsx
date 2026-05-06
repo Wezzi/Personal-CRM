@@ -31,7 +31,7 @@ import {
   updatePersonDetails,
   isContactStale,
 } from "../lib/crm";
-import { colors, layout } from "../theme/tokens";
+import { layout, useTheme, useThemedStyles } from "../theme/tokens";
 import { CalendarDestination, getAvailableCalendarDestinations, openFollowUpInCalendar } from "../lib/calendar";
 import { clearPendingExternalAction, getPendingExternalAction, PendingExternalAction, setPendingExternalAction } from "../lib/externalActionFlow";
 
@@ -69,6 +69,8 @@ export function PersonProfileScreen({
   forcedStatusMode = null,
   forcedStatusNonce = 0,
 }: PersonProfileScreenProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const isCompactLayout = width < 720;
   const [isCaptureOpen, setCaptureOpen] = useState(false);
@@ -1779,7 +1781,7 @@ export function PersonProfileScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   pendingExternalCard: {
     gap: 12,
     borderColor: colors.primaryAction,
@@ -2020,7 +2022,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   iconButtonTextPreferred: {
-    color: colors.background,
+    color: colors.onPrimary,
   },
   expandedPersonContent: {
     marginTop: 14,

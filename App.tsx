@@ -16,12 +16,13 @@ import { EventScreen } from "./src/screens/EventScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { PersonProfileScreen, PersonStatusMode } from "./src/screens/PersonProfileScreen";
 import { useAuth } from "./src/hooks/useAuth";
-import { colors } from "./src/theme/tokens";
+import { ThemePreference, ThemeProvider, useTheme, useThemedStyles } from "./src/theme/tokens";
 
 type ScreenKey = "home" | "event" | "person";
 type TutorialStep = "setEvent" | "capture";
 
 const CURRENT_EVENT_STORAGE_KEY = "blackbook.current_event";
+const ACTIVE_SCREEN_STORAGE_KEY = "blackbook.active_screen";
 const TUTORIAL_STORAGE_KEY = "blackbook.tutorial.core_flow";
 
 function formatCurrentEventChipLabel(event: CurrentEventValue | null) {
@@ -51,8 +52,14 @@ function getWelcomeName(user: NonNullable<ReturnType<typeof useAuth>["user"]> | 
   return typeof candidate === "string" && candidate.trim() ? candidate.trim() : "there";
 }
 
-export default function App() {
+function isScreenKey(value: string | null): value is ScreenKey {
+  return value === "home" || value === "event" || value === "person";
+}
+
+function AppShell() {
   const { width } = useWindowDimensions();
+  const { colors, preference, resolvedScheme, setPreference } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const isCompactLayout = width < 880;
   const isVeryCompactLayout = width < 520;
   const { user, isLoading, authError, clearAuthError } = useAuth();
@@ -64,6 +71,7 @@ export default function App() {
   const [isNavMenuOpen, setNavMenuOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [screen, setScreen] = useState<ScreenKey>("home");
+  const [hasHydratedActiveScreen, setHasHydratedActiveScreen] = useState(false);
   const [personStatusMode, setPersonStatusMode] = useState<PersonStatusMode>("all");
   const [personStatusNonce, setPersonStatusNonce] = useState(0);
   const [isCurrentEventOpen, setCurrentEventOpen] = useState(false);
@@ -130,6 +138,38 @@ useEffect(() => {
     isMounted = false;
   };
 }, [activeUser]);
+
+useEffect(() => {
+  let isMounted = true;
+
+  async function hydrateActiveScreen() {
+    const savedScreen = await AsyncStorage.getItem(ACTIVE_SCREEN_STORAGE_KEY);
+    if (isMounted && isScreenKey(savedScreen)) {
+      setScreen(savedScreen);
+    }
+    if (isMounted) {
+      setHasHydratedActiveScreen(true);
+    }
+  }
+
+  void hydrateActiveScreen();
+
+  return () => {
+    isMounted = false;
+  };
+}, []);
+
+useEffect(() => {
+  async function persistActiveScreen() {
+    if (!hasHydratedActiveScreen) {
+      return;
+    }
+
+    await AsyncStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, screen);
+  }
+
+  void persistActiveScreen();
+}, [hasHydratedActiveScreen, screen]);
 
 useEffect(() => {
   let isMounted = true;
@@ -276,6 +316,7 @@ useEffect(() => {
     try {
       await signOutCurrentUser();
       setCurrentEvent(null);
+      setScreen("home");
     } finally {
       setAccountMenuOpen(false);
       setNavMenuOpen(false);
@@ -312,6 +353,10 @@ useEffect(() => {
   function openAccountArea() {
     setNavMenuOpen(false);
     setAccountMenuOpen(true);
+  }
+
+  function handleThemeChange(nextPreference: ThemePreference) {
+    void setPreference(nextPreference);
   }
 
   return (
@@ -567,6 +612,35 @@ useEffect(() => {
             </View>
 
             <View style={styles.settingsActions}>
+              <View style={styles.themeSection}>
+                <Typography variant="caption">Theme</Typography>
+                <View style={styles.themeButtons}>
+                  <Button
+                    label="System"
+                    onPress={() => handleThemeChange("system")}
+                    variant={preference === "system" ? "primary" : "ghost"}
+                    fullWidth={false}
+                    size="compact"
+                  />
+                  <Button
+                    label="Light"
+                    onPress={() => handleThemeChange("light")}
+                    variant={preference === "light" ? "primary" : "ghost"}
+                    fullWidth={false}
+                    size="compact"
+                  />
+                  <Button
+                    label="Dark"
+                    onPress={() => handleThemeChange("dark")}
+                    variant={preference === "dark" ? "primary" : "ghost"}
+                    fullWidth={false}
+                    size="compact"
+                  />
+                </View>
+                <Typography variant="body" style={styles.themeMeta}>
+                  Current theme: {resolvedScheme}
+                </Typography>
+              </View>
               <Button label="Report a bug" onPress={handleReportBug} />
               <Button label="Suggest a feature" onPress={handleSuggestFeature} variant="ghost" />
             </View>
@@ -574,12 +648,20 @@ useEffect(() => {
         </SafeAreaView>
       </Modal>
 
-      <StatusBar style="dark" />
+      <StatusBar style={resolvedScheme === "dark" ? "light" : "dark"} />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
+  );
+}
+
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
@@ -722,6 +804,17 @@ const styles = StyleSheet.create({
   settingsActions: {
     gap: 12,
     marginTop: 12,
+  },
+  themeSection: {
+    gap: 10,
+  },
+  themeButtons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  themeMeta: {
+    color: colors.textSecondary,
   },
   accountMenuOverlay: {
     flex: 1,

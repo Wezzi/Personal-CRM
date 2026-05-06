@@ -7,7 +7,7 @@ import {
   ViewStyle,
 } from "react-native";
 
-import { colors, layout, radius } from "../../theme/tokens";
+import { layout, radius, useTheme, useThemedStyles } from "../../theme/tokens";
 import { Typography } from "./Typography";
 
 type ButtonVariant = "primary" | "ghost";
@@ -37,6 +37,8 @@ export function Button({
   size = "default",
   style,
 }: ButtonProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const isDisabled = disabled || loading;
   const primary = variant === "primary";
 
@@ -55,7 +57,7 @@ export function Button({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={primary ? colors.background : colors.primaryAction} />
+        <ActivityIndicator color={primary ? colors.onPrimary : colors.primaryAction} />
       ) : (
         <>
           {leftIcon}
@@ -72,7 +74,7 @@ export function Button({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   base: {
     minHeight: layout.minTouchTarget,
     borderRadius: radius.button,
@@ -110,7 +112,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   primaryLabel: {
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: "700",
   },
   ghostLabel: {

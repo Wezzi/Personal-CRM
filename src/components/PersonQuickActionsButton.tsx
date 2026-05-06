@@ -19,7 +19,7 @@ import {
   parseDateOnlyString,
   PersonInsight,
 } from "../lib/crm";
-import { colors, radius } from "../theme/tokens";
+import { radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 type ContactMethod = "whatsapp" | "email" | "linkedin" | "phone";
 
@@ -108,6 +108,8 @@ function groupTimeline(items: TimelineItem[]) {
 }
 
 export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActionsButtonProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [isMenuOpen, setMenuOpen] = useState(false);
   const [isDraftOpen, setDraftOpen] = useState(false);
   const [isReminderOpen, setReminderOpen] = useState(false);
@@ -383,7 +385,7 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   trigger: {
     minWidth: 38,
     minHeight: 38,

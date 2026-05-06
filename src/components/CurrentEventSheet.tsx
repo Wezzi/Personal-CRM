@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Modal, SafeAreaView, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
 
 import { EVENT_CATEGORY_OPTIONS, EventCategory, formatCategoryLabel } from "../lib/crm";
-import { colors, layout, radius } from "../theme/tokens";
+import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
 import { Typography } from "./ui/Typography";
@@ -46,6 +46,8 @@ function getRelativeDateInputValue(offsetDays: number) {
 }
 
 export function CurrentEventSheet({ visible, value, onClose, onSave, onClear }: CurrentEventSheetProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const isCompactLayout = width < 720;
   const [name, setName] = useState("");
@@ -182,7 +184,7 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear }: 
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,

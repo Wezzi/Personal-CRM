@@ -10,7 +10,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 
 import { Button } from "./ui/Button";
 import { Typography } from "./ui/Typography";
-import { colors, layout, radius } from "../theme/tokens";
+import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 type QRScannerModalProps = {
   visible: boolean;
@@ -19,6 +19,7 @@ type QRScannerModalProps = {
 };
 
 export function QRScannerModal({ visible, onClose, onScanned }: QRScannerModalProps) {
+  const styles = useThemedStyles(createStyles);
   const [permission, requestPermission] = useCameraPermissions();
   const [hasScanned, setHasScanned] = useState(false);
 
@@ -92,7 +93,7 @@ export function QRScannerModal({ visible, onClose, onScanned }: QRScannerModalPr
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,

@@ -7,7 +7,7 @@ import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
 import { Typography } from "./ui/Typography";
 import { ensureSessionUserId, listPeopleInsights, PersonInsight } from "../lib/crm";
-import { colors, layout, radius } from "../theme/tokens";
+import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 type EventWrapUpSheetProps = {
   visible: boolean;
@@ -21,6 +21,7 @@ function belongsToCurrentEvent(person: PersonInsight, event: CurrentEventValue) 
 }
 
 export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: EventWrapUpSheetProps) {
+  const styles = useThemedStyles(createStyles);
   const [people, setPeople] = useState<PersonInsight[]>([]);
   const [isLoading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -149,7 +150,7 @@ export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: E
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,

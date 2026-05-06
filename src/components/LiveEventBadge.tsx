@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 
-import { colors, radius } from "../theme/tokens";
+import { radius, useTheme, useThemedStyles } from "../theme/tokens";
 import { Typography } from "./ui/Typography";
 
 type LiveEventBadgeProps = {
@@ -46,6 +46,8 @@ function getEventTiming(eventDate?: string | null): EventTiming {
 }
 
 export function LiveEventBadge({ label, eventDate }: LiveEventBadgeProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const pulse = useRef(new Animated.Value(0)).current;
   const timing = getEventTiming(eventDate);
   const isLive = timing === "live";
@@ -111,7 +113,7 @@ export function LiveEventBadge({ label, eventDate }: LiveEventBadgeProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   badge: {
     alignSelf: "flex-start",
     flexDirection: "row",

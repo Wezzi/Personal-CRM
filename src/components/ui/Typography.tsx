@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
-import { StyleProp, StyleSheet, Text, TextStyle } from "react-native";
+import { StyleProp, Text, TextStyle } from "react-native";
 
-import { colors, typography } from "../../theme/tokens";
+import { typography, useTheme } from "../../theme/tokens";
 
 type Variant = "display" | "h1" | "h2" | "body" | "caption";
 
@@ -12,39 +12,40 @@ type TypographyProps = {
   numberOfLines?: number;
 };
 
-const variantStyles: Record<Variant, TextStyle> = {
-  display: {
-    ...typography.display,
-    color: colors.textPrimary,
-  },
-  h1: {
-    ...typography.h1,
-    color: colors.textPrimary,
-  },
-  h2: {
-    ...typography.h2,
-    color: colors.textPrimary,
-  },
-  body: {
-    ...typography.body,
-    color: colors.textPrimary,
-  },
-  caption: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    textTransform: "uppercase",
-  },
-};
-
 export function Typography({
   children,
   variant = "body",
   style,
   numberOfLines,
 }: TypographyProps) {
+  const { colors } = useTheme();
+  const variantStyles: Record<Variant, TextStyle> = {
+    display: {
+      ...typography.display,
+      color: colors.textPrimary,
+    },
+    h1: {
+      ...typography.h1,
+      color: colors.textPrimary,
+    },
+    h2: {
+      ...typography.h2,
+      color: colors.textPrimary,
+    },
+    body: {
+      ...typography.body,
+      color: colors.textPrimary,
+    },
+    caption: {
+      ...typography.caption,
+      color: colors.textTertiary,
+      textTransform: "uppercase",
+    },
+  };
+
   return (
     <Text
-      style={[styles.base, variantStyles[variant], style]}
+      style={[baseStyle, variantStyles[variant], style]}
       numberOfLines={numberOfLines}
     >
       {children}
@@ -52,8 +53,6 @@ export function Typography({
   );
 }
 
-const styles = StyleSheet.create({
-  base: {
-    includeFontPadding: false,
-  },
-});
+const baseStyle: TextStyle = {
+  includeFontPadding: false,
+};

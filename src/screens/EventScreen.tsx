@@ -28,7 +28,7 @@ import {
   parseDateOnlyString,
   updateEventDetails,
 } from "../lib/crm";
-import { colors, layout } from "../theme/tokens";
+import { layout, useTheme, useThemedStyles } from "../theme/tokens";
 
 type SortMode = "recent" | "name" | "people" | "notes";
 
@@ -59,6 +59,8 @@ function getRelativeDateInputValue(offsetDays: number) {
 }
 
 export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent }: EventScreenProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const isCompactLayout = width < 720;
   const [isEventEditorOpen, setEventEditorOpen] = useState(false);
@@ -729,7 +731,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,

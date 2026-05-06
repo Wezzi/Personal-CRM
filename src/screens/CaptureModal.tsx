@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   requestRecordingPermissionsAsync,
@@ -37,11 +38,10 @@ import {
   formatFollowUpDate,
   getPresetDate,
   getSuggestedFollowUpPreset,
-  PERSON_TAG_SUGGESTIONS,
   PersonPriority,
   PreferredChannel,
 } from "../lib/crm";
-import { colors, layout, radius } from "../theme/tokens";
+import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 export type QuickCaptureMethod = "manual" | "paste" | "voice" | "scan";
 
@@ -91,6 +91,15 @@ const preferredChannelOptions: Array<{ label: string; value: PreferredChannel }>
   { label: "Other", value: "other" },
 ];
 
+const goalTagOptions = [
+  "Business Opportunity",
+  "Potential Client",
+  "New Hire",
+  "Partner",
+  "Interesting",
+  "Other",
+] as const;
+
 export type LockedEventDraft = {
   name: string;
   category: EventCategory;
@@ -107,6 +116,14 @@ type CaptureModalProps = {
   lockedEvent?: LockedEventDraft | null;
   initialMethod?: QuickCaptureMethod;
   showQuickCapture?: boolean;
+  draftStorageKey?: string;
+};
+
+type SavedCaptureDraft = {
+  draft: ParsedPersonDraft;
+  activeMethod: QuickCaptureMethod;
+  pasteInput: string;
+  isFollowUpManuallySet: boolean;
 };
 
 function cleanValue(value: string) {
@@ -256,11 +273,15 @@ export function CaptureModal({
   lockedEvent,
   initialMethod = "manual",
   showQuickCapture = true,
+  draftStorageKey,
 }: CaptureModalProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [draft, setDraft] = useState<ParsedPersonDraft>(emptyDraft);
   const [isFollowUpManuallySet, setFollowUpManuallySet] = useState(false);
   const [activeMethod, setActiveMethod] = useState<QuickCaptureMethod>(initialMethod);
   const [pasteInput, setPasteInput] = useState("");
+  const [hasHydratedSavedDraft, setHasHydratedSavedDraft] = useState(false);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -277,29 +298,89 @@ export function CaptureModal({
       return;
     }
 
-    const eventCategory = lockedEvent?.category || initialDraft?.eventCategory || "";
-    const followUpPreset = initialDraft?.followUpPreset || getSuggestedFollowUpPreset(eventCategory || null);
-    const nextFollowUpAt = initialDraft?.nextFollowUpAt || getPresetDate(followUpPreset);
+    let isMounted = true;
 
-    setDraft({
-      ...emptyDraft,
-      ...initialDraft,
-      event: lockedEvent?.name || initialDraft?.event || "",
-      eventCategory,
-      whatMatters: initialDraft?.whatMatters || "",
-      nextStep: initialDraft?.nextStep || "",
-      followUpPreset,
-      nextFollowUpAt,
-      rawInput: initialDraft?.rawInput || "",
-    });
-    setFollowUpManuallySet(Boolean(initialDraft?.nextFollowUpAt || initialDraft?.followUpPreset));
-    setActiveMethod(initialMethod);
-    setPasteInput(initialDraft?.rawInput || "");
-    setScanError(null);
-    setIsCardScanProcessing(false);
-    setIsScanChoiceVisible(false);
-    setIsQrScannerVisible(false);
+    async function hydrateDraft() {
+      setHasHydratedSavedDraft(false);
+
+      const eventCategory: EventCategory | "" = lockedEvent?.category || initialDraft?.eventCategory || "";
+      const followUpPreset = initialDraft?.followUpPreset || getSuggestedFollowUpPreset(eventCategory || null);
+      const nextFollowUpAt = initialDraft?.nextFollowUpAt || getPresetDate(followUpPreset);
+      const baseDraft: ParsedPersonDraft = {
+        ...emptyDraft,
+        ...initialDraft,
+        event: lockedEvent?.name || initialDraft?.event || "",
+        eventCategory,
+        whatMatters: initialDraft?.whatMatters || "",
+        nextStep: initialDraft?.nextStep || "",
+        followUpPreset,
+        nextFollowUpAt,
+        rawInput: initialDraft?.rawInput || "",
+      };
+
+      let savedDraft: SavedCaptureDraft | null = null;
+      if (draftStorageKey && !initialDraft) {
+        const rawSavedDraft = await AsyncStorage.getItem(draftStorageKey);
+        if (rawSavedDraft) {
+          try {
+            savedDraft = JSON.parse(rawSavedDraft) as SavedCaptureDraft;
+          } catch {
+            await AsyncStorage.removeItem(draftStorageKey);
+          }
+        }
+      }
+
+      if (!isMounted) {
+        return;
+      }
+
+      const nextDraft: ParsedPersonDraft = savedDraft?.draft
+        ? {
+            ...baseDraft,
+            ...savedDraft.draft,
+            event: lockedEvent?.name || savedDraft.draft.event || baseDraft.event,
+            eventCategory: lockedEvent?.category || savedDraft.draft.eventCategory || baseDraft.eventCategory,
+          }
+        : baseDraft;
+
+      setDraft(nextDraft);
+      setFollowUpManuallySet(
+        savedDraft?.isFollowUpManuallySet ?? Boolean(initialDraft?.nextFollowUpAt || initialDraft?.followUpPreset)
+      );
+      setActiveMethod(savedDraft?.activeMethod || initialMethod);
+      setPasteInput(savedDraft?.pasteInput || initialDraft?.rawInput || "");
+      setScanError(null);
+      setIsCardScanProcessing(false);
+      setIsScanChoiceVisible(false);
+      setIsQrScannerVisible(false);
+      setHasHydratedSavedDraft(true);
+    }
+
+    void hydrateDraft();
+
+    return () => {
+      isMounted = false;
+    };
   }, [initialDraft, initialMethod, lockedEvent, visible]);
+
+  useEffect(() => {
+    if (!visible || !draftStorageKey || !hasHydratedSavedDraft || initialDraft) {
+      return;
+    }
+
+    async function persistDraft() {
+      const payload: SavedCaptureDraft = {
+        draft,
+        activeMethod,
+        pasteInput,
+        isFollowUpManuallySet,
+      };
+
+      await AsyncStorage.setItem(draftStorageKey as string, JSON.stringify(payload));
+    }
+
+    void persistDraft();
+  }, [activeMethod, draft, draftStorageKey, hasHydratedSavedDraft, initialDraft, isFollowUpManuallySet, pasteInput, visible]);
 
   useEffect(() => {
     if (!visible || isFollowUpManuallySet) {
@@ -584,6 +665,10 @@ export function CaptureModal({
       return;
     }
 
+    if (draftStorageKey) {
+      void AsyncStorage.removeItem(draftStorageKey);
+    }
+
     onSave({
       ...draft,
       name: cleanValue(draft.name),
@@ -605,6 +690,14 @@ export function CaptureModal({
     });
   }
 
+  function handleClose() {
+    if (draftStorageKey) {
+      void AsyncStorage.removeItem(draftStorageKey);
+    }
+
+    onClose();
+  }
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <SafeAreaView style={styles.safeArea}>
@@ -623,7 +716,7 @@ export function CaptureModal({
                   Capture quickly now, tidy the details second.
                 </Typography>
               </View>
-              <Pressable onPress={onClose} hitSlop={12} style={styles.closePill}>
+              <Pressable onPress={handleClose} hitSlop={12} style={styles.closePill}>
                 <Typography variant="caption" style={styles.closeText}>
                   Close
                 </Typography>
@@ -744,9 +837,9 @@ export function CaptureModal({
 
             <Card style={styles.sectionCard}>
               <View style={styles.sectionIntro}>
-                <Typography variant="caption">Basics</Typography>
+                <Typography variant="caption">10-second capture</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  Save the minimum context you need to recognize them later.
+                  Name, why they matter, and the next useful action.
                 </Typography>
               </View>
 
@@ -762,34 +855,22 @@ export function CaptureModal({
                 />
               </View>
 
-              <View style={styles.twoColumnRow}>
-                <View style={styles.metaInputBlock}>
-                  <Typography variant="caption">Company</Typography>
-                  <TextInput
-                    placeholder="Stripe"
-                    placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
-                    value={draft.company}
-                    onChangeText={(value) => updateField("company", value)}
-                  />
-                </View>
-                <View style={styles.metaInputBlock}>
-                  <Typography variant="caption">Event</Typography>
-                  <TextInput
-                    placeholder="React Native EU"
-                    placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
-                    value={draft.event}
-                    onChangeText={(value) => updateField("event", value)}
-                    editable={!lockedEvent}
-                  />
-                </View>
+              <View style={styles.fieldBlock}>
+                <Typography variant="caption">Why they matter</Typography>
+                <TextInput
+                  placeholder="Investor in climate, hiring designers, runs the community..."
+                  placeholderTextColor={colors.textTertiary}
+                  style={[styles.fieldInput, styles.fastTextAreaInput]}
+                  value={draft.whatMatters}
+                  onChangeText={(value) => updateField("whatMatters", value)}
+                  multiline
+                />
               </View>
 
               <View style={styles.chipSection}>
-                <Typography variant="caption">Quick tags</Typography>
+                <Typography variant="caption">Goal</Typography>
                 <View style={styles.chipRow}>
-                  {PERSON_TAG_SUGGESTIONS.map((tag) => (
+                  {goalTagOptions.map((tag) => (
                     <Button
                       key={tag}
                       label={tag}
@@ -807,140 +888,22 @@ export function CaptureModal({
                 ) : null}
               </View>
 
-              <View style={styles.chipSection}>
-                <Typography variant="caption">Preferred contact method</Typography>
-                <Typography variant="body" style={styles.helperText}>
-                  Save the channel they actually want you to use later.
-                </Typography>
-                <View style={styles.chipRow}>
-                  {preferredChannelOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      label={option.label}
-                      onPress={() => handlePreferredChannelSelect(option.value)}
-                      variant={draft.preferredChannel === option.value ? "primary" : "ghost"}
-                      fullWidth={false}
-                      size="compact"
-                    />
-                  ))}
-                </View>
-                {draft.preferredChannel === "other" ? (
-                  <TextInput
-                    placeholder="Instagram, Discord, Telegram..."
-                    placeholderTextColor={colors.textTertiary}
-                    style={[styles.fieldInput, styles.inlineInputTop]}
-                    value={draft.preferredChannelOther}
-                    onChangeText={(value) => updateField("preferredChannelOther", value)}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                ) : null}
-              </View>
-            </Card>
-
-            <Card style={styles.sectionCard}>
-              <View style={styles.sectionIntro}>
-                <Typography variant="caption">Context</Typography>
-                <Typography variant="body" style={styles.helperText}>
-                  This is the memory layer that makes the contact useful later.
-                </Typography>
-              </View>
-
               <View style={styles.fieldBlock}>
-                <Typography variant="caption">What matters / Context</Typography>
+                <Typography variant="caption">Next step / brain dump</Typography>
                 <TextInput
-                  placeholder="What clicked here?"
+                  placeholder="Send deck, make intro, ask about the role..."
                   placeholderTextColor={colors.textTertiary}
-                  style={[styles.fieldInput, styles.textAreaInput]}
-                  value={draft.whatMatters}
-                  onChangeText={(value) => updateField("whatMatters", value)}
-                  multiline
-                />
-              </View>
-
-              <View style={styles.fieldBlock}>
-                <Typography variant="caption">What should happen next</Typography>
-                <TextInput
-                  placeholder="Send deck, make intro, check in next week..."
-                  placeholderTextColor={colors.textTertiary}
-                  style={[styles.fieldInput, styles.textAreaInput]}
+                  style={[styles.fieldInput, styles.fastTextAreaInput]}
                   value={draft.nextStep}
                   onChangeText={(value) => updateField("nextStep", value)}
                   multiline
                 />
               </View>
 
-              <View style={styles.twoColumnRow}>
-                <View style={styles.metaInputBlock}>
-                  <Typography variant="caption">LinkedIn</Typography>
-                  <TextInput
-                    placeholder="linkedin.com/in/sarah"
-                    placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
-                    value={draft.linkedinUrl}
-                    onChangeText={(value) => updateField("linkedinUrl", value)}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-                <View style={styles.metaInputBlock}>
-                  <Typography variant="caption">Email</Typography>
-                  <TextInput
-                    placeholder="sarah@company.com"
-                    placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
-                    value={draft.email}
-                    onChangeText={(value) => updateField("email", value)}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
-                  />
-                </View>
-                <View style={styles.metaInputBlock}>
-                  <Typography variant="caption">WhatsApp</Typography>
-                  <TextInput
-                    placeholder="+44 7700 900123"
-                    placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
-                    value={draft.phoneNumber}
-                    onChangeText={(value) => updateField("phoneNumber", value)}
-                    keyboardType="phone-pad"
-                  />
-                </View>
-              </View>
-            </Card>
-
-            <Card style={styles.sectionCard}>
-              <View style={styles.sectionIntro}>
-                <Typography variant="caption">Follow-up</Typography>
-                <Typography variant="body" style={styles.helperText}>
-                  Suggested from the event type, but easy to override.
-                </Typography>
-              </View>
-
               <View style={styles.chipSection}>
-                <Typography variant="caption">Event type</Typography>
-                <View style={styles.chipRow}>
-                  {EVENT_CATEGORY_OPTIONS.filter(
-                    (option): option is { label: string; value: EventCategory } => option.value !== "all"
-                  ).map((option) => (
-                    <Button
-                      key={option.value}
-                      label={option.label}
-                      onPress={() => handleEventCategoryChange(option.value)}
-                      variant={draft.eventCategory === option.value ? "primary" : "ghost"}
-                      fullWidth={false}
-                      size="compact"
-                      disabled={Boolean(lockedEvent)}
-                    />
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.chipSection}>
-                <Typography variant="caption">Follow up when?</Typography>
+                <Typography variant="caption">Suggested follow-up slot</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  Suggested based on event type: {suggestedPresetLabel}
+                  Suggested from event type: {suggestedPresetLabel}
                 </Typography>
                 <View style={styles.chipRow}>
                   <Button
@@ -992,6 +955,124 @@ export function CaptureModal({
             </Card>
 
             <Card style={styles.sectionCard}>
+              <View style={styles.sectionIntro}>
+                <Typography variant="caption">Optional details</Typography>
+                <Typography variant="body" style={styles.helperText}>
+                  Add these if you have them. The contact can still save without them.
+                </Typography>
+              </View>
+
+              <View style={styles.twoColumnRow}>
+                <View style={styles.metaInputBlock}>
+                  <Typography variant="caption">Company</Typography>
+                  <TextInput
+                    placeholder="Stripe"
+                    placeholderTextColor={colors.textTertiary}
+                    style={styles.fieldInput}
+                    value={draft.company}
+                    onChangeText={(value) => updateField("company", value)}
+                  />
+                </View>
+                <View style={styles.metaInputBlock}>
+                  <Typography variant="caption">Event</Typography>
+                  <TextInput
+                    placeholder="React Native EU"
+                    placeholderTextColor={colors.textTertiary}
+                    style={styles.fieldInput}
+                    value={draft.event}
+                    onChangeText={(value) => updateField("event", value)}
+                    editable={!lockedEvent}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.chipSection}>
+                <Typography variant="caption">Preferred contact method</Typography>
+                <View style={styles.chipRow}>
+                  {preferredChannelOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      label={option.label}
+                      onPress={() => handlePreferredChannelSelect(option.value)}
+                      variant={draft.preferredChannel === option.value ? "primary" : "ghost"}
+                      fullWidth={false}
+                      size="compact"
+                    />
+                  ))}
+                </View>
+                {draft.preferredChannel === "other" ? (
+                  <TextInput
+                    placeholder="Instagram, Discord, Telegram..."
+                    placeholderTextColor={colors.textTertiary}
+                    style={[styles.fieldInput, styles.inlineInputTop]}
+                    value={draft.preferredChannelOther}
+                    onChangeText={(value) => updateField("preferredChannelOther", value)}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                ) : null}
+              </View>
+
+              <View style={styles.twoColumnRow}>
+                <View style={styles.metaInputBlock}>
+                  <Typography variant="caption">LinkedIn</Typography>
+                  <TextInput
+                    placeholder="linkedin.com/in/sarah"
+                    placeholderTextColor={colors.textTertiary}
+                    style={styles.fieldInput}
+                    value={draft.linkedinUrl}
+                    onChangeText={(value) => updateField("linkedinUrl", value)}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                <View style={styles.metaInputBlock}>
+                  <Typography variant="caption">Email</Typography>
+                  <TextInput
+                    placeholder="sarah@company.com"
+                    placeholderTextColor={colors.textTertiary}
+                    style={styles.fieldInput}
+                    value={draft.email}
+                    onChangeText={(value) => updateField("email", value)}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                  />
+                </View>
+                <View style={styles.metaInputBlock}>
+                  <Typography variant="caption">Phone / WhatsApp</Typography>
+                  <TextInput
+                    placeholder="+44 7700 900123"
+                    placeholderTextColor={colors.textTertiary}
+                    style={styles.fieldInput}
+                    value={draft.phoneNumber}
+                    onChangeText={(value) => updateField("phoneNumber", value)}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.chipSection}>
+                <Typography variant="caption">Event type</Typography>
+                <View style={styles.chipRow}>
+                  {EVENT_CATEGORY_OPTIONS.filter(
+                    (option): option is { label: string; value: EventCategory } => option.value !== "all"
+                  ).map((option) => (
+                    <Button
+                      key={option.value}
+                      label={option.label}
+                      onPress={() => handleEventCategoryChange(option.value)}
+                      variant={draft.eventCategory === option.value ? "primary" : "ghost"}
+                      fullWidth={false}
+                      size="compact"
+                      disabled={Boolean(lockedEvent)}
+                    />
+                  ))}
+                </View>
+              </View>
+            </Card>
+
+            <Card style={styles.sectionCard}>
               <Typography variant="caption">Preview</Typography>
               <Typography variant="body" style={styles.previewText}>
                 {sentencePreview}
@@ -1002,7 +1083,7 @@ export function CaptureModal({
           <View style={styles.footerWrap}>
             <View style={styles.footerButtons}>
               <Button label={saveLabel} onPress={handleSave} loading={isSaving} disabled={!canSave} />
-              <Button label="Cancel" onPress={onClose} variant="ghost" />
+              <Button label="Cancel" onPress={handleClose} variant="ghost" />
             </View>
           </View>
         </View>
@@ -1044,7 +1125,7 @@ export function CaptureModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
@@ -1142,6 +1223,10 @@ const styles = StyleSheet.create({
   },
   textAreaInput: {
     minHeight: 96,
+    textAlignVertical: "top",
+  },
+  fastTextAreaInput: {
+    minHeight: 72,
     textAlignVertical: "top",
   },
   chipSection: {
