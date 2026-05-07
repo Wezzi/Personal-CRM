@@ -313,6 +313,7 @@ export async function signInWithGoogle() {
     provider: "google",
     options: {
       redirectTo: authRedirectUrl,
+      scopes: "openid email profile",
     },
   });
 

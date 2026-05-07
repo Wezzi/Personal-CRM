@@ -23,6 +23,7 @@ import {
 } from "../lib/crm";
 import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 import { PersonStatusMode } from "./PersonProfileScreen";
+import { captureAnalyticsEvent } from "../lib/analytics";
 
 type HomeScreenProps = {
   currentEvent: CurrentEventValue | null;
@@ -156,7 +157,7 @@ export function HomeScreen({
     void persistCaptureState();
   }, [hasHydratedCaptureState, isCaptureOpen]);
 
-  async function handleSaveDraft(draft: ParsedPersonDraft) {
+  async function handleSaveDraft(draft: ParsedPersonDraft, options?: { addAnother?: boolean }) {
     if (isSaving) {
       return;
     }
@@ -193,10 +194,28 @@ export function HomeScreen({
         rawNote: buildInteractionRecord(draft.whatMatters, draft.nextStep, draft.company, draft.nextFollowUpAt),
       });
 
-      setCaptureOpen(false);
-      await AsyncStorage.setItem(HOME_CAPTURE_OPEN_STORAGE_KEY, "false");
+      void captureAnalyticsEvent("contact_captured", {
+        surface: "home",
+        add_another: Boolean(options?.addAnother),
+        has_current_event: Boolean(currentEvent),
+        event_category: eventCategory || undefined,
+        follow_up_preset: draft.followUpPreset || undefined,
+        preferred_channel: draft.preferredChannel || undefined,
+        tags_count: draft.tags.length,
+        has_company: Boolean(draft.company),
+        has_linkedin: Boolean(draft.linkedinUrl),
+        has_email: Boolean(draft.email),
+        has_phone: Boolean(draft.phoneNumber),
+      });
+
+      if (!options?.addAnother) {
+        setCaptureOpen(false);
+        await AsyncStorage.setItem(HOME_CAPTURE_OPEN_STORAGE_KEY, "false");
+      }
       await loadData();
-      Alert.alert("Contact added", `${draft.name} saved${eventName && eventName !== "No event" ? ` to ${eventName}` : ""}.`);
+      if (!options?.addAnother) {
+        Alert.alert("Contact added", `${draft.name} saved${eventName && eventName !== "No event" ? ` to ${eventName}` : ""}.`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save interaction.";
       Alert.alert("Could not save contact", message);
@@ -399,6 +418,7 @@ export function HomeScreen({
           visible={isCaptureOpen}
           onClose={closeCapture}
           onSave={handleSaveDraft}
+          saveLabel="Save & View Draft"
           isSaving={isSaving}
           lockedEvent={currentEvent}
           initialMethod="manual"

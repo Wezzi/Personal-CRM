@@ -1,6 +1,8 @@
 import { Alert, Linking, Platform } from "react-native";
 import * as Calendar from "expo-calendar";
 
+import { supabase } from "./supabase";
+
 export type CalendarFollowUpInput = {
   name: string;
   company?: string | null;
@@ -11,6 +13,12 @@ export type CalendarFollowUpInput = {
 };
 
 export type CalendarDestination = "device" | "google" | "outlook" | "yahoo" | "ics";
+
+export type CalendarSuggestedSlot = {
+  label: string;
+  dateOnly: string;
+  source: "google" | "device" | "fallback";
+};
 
 export function getAvailableCalendarDestinations(): Array<{
   value: CalendarDestination;
@@ -97,6 +105,183 @@ function getEventWindow(input: CalendarFollowUpInput) {
   const start = parseFollowUpDate(input.nextFollowUpAt);
   const end = new Date(start.getTime() + 15 * 60 * 1000);
   return { start, end };
+}
+
+function toDateOnlyString(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatSlotLabel(date: Date) {
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function buildFallbackSlots(): CalendarSuggestedSlot[] {
+  const slots = [
+    { dayOffset: 1, hour: 10 },
+    { dayOffset: 3, hour: 14 },
+    { dayOffset: 7, hour: 10 },
+  ];
+
+  return slots.map((slot) => {
+    const date = new Date();
+    date.setHours(slot.hour, 0, 0, 0);
+    date.setDate(date.getDate() + slot.dayOffset);
+
+    return {
+      label: formatSlotLabel(date),
+      dateOnly: toDateOnlyString(date),
+      source: "fallback" as const,
+    };
+  });
+}
+
+function overlapsTimeWindow(
+  candidateStart: Date,
+  candidateEnd: Date,
+  busyWindows: Array<{ start: Date; end: Date }>
+) {
+  const startMs = candidateStart.getTime();
+  const endMs = candidateEnd.getTime();
+
+  return busyWindows.some((event) => {
+    const eventStart = event.start.getTime();
+    const eventEnd = event.end.getTime();
+    return eventStart < endMs && eventEnd > startMs;
+  });
+}
+
+function buildSlotsFromBusyWindows(
+  busyWindows: Array<{ start: Date; end: Date }>,
+  source: CalendarSuggestedSlot["source"]
+): CalendarSuggestedSlot[] {
+  const suggestions: CalendarSuggestedSlot[] = [];
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+
+  for (let dayOffset = 1; dayOffset <= 10 && suggestions.length < 3; dayOffset += 1) {
+    for (const hour of [10, 14, 16]) {
+      const candidateStart = new Date(start);
+      candidateStart.setDate(candidateStart.getDate() + dayOffset);
+      candidateStart.setHours(hour, 0, 0, 0);
+      const candidateEnd = new Date(candidateStart.getTime() + 30 * 60 * 1000);
+
+      if (!overlapsTimeWindow(candidateStart, candidateEnd, busyWindows)) {
+        suggestions.push({
+          label: formatSlotLabel(candidateStart),
+          dateOnly: toDateOnlyString(candidateStart),
+          source,
+        });
+      }
+
+      if (suggestions.length >= 3) {
+        break;
+      }
+    }
+  }
+
+  return suggestions;
+}
+
+async function getGoogleCalendarSlots(): Promise<CalendarSuggestedSlot[]> {
+  if (!supabase) {
+    return [];
+  }
+
+  const { data } = await supabase.auth.getSession();
+  const providerToken = (data.session as { provider_token?: string } | null)?.provider_token;
+  if (!providerToken) {
+    return [];
+  }
+
+  const timeMin = new Date();
+  const timeMax = new Date();
+  timeMax.setDate(timeMax.getDate() + 10);
+
+  const response = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${providerToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      timeMin: timeMin.toISOString(),
+      timeMax: timeMax.toISOString(),
+      items: [{ id: "primary" }],
+    }),
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const payload = (await response.json()) as {
+    calendars?: Record<string, { busy?: Array<{ start: string; end: string }> }>;
+  };
+  const busy = payload.calendars?.primary?.busy || [];
+  const busyWindows = busy.map((window) => ({
+    start: new Date(window.start),
+    end: new Date(window.end),
+  }));
+
+  return buildSlotsFromBusyWindows(busyWindows, "google");
+}
+
+async function getDeviceCalendarSlots(): Promise<CalendarSuggestedSlot[]> {
+  const ok = await ensureCalendarPermission();
+  if (!ok) {
+    return [];
+  }
+
+  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  const calendarIds = calendars
+    .filter((calendar) => calendar.allowsModifications || calendar.isPrimary || calendar.source?.name)
+    .map((calendar) => calendar.id);
+
+  if (!calendarIds.length) {
+    return [];
+  }
+
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 10);
+
+  const events = await Calendar.getEventsAsync(calendarIds, start, end);
+  const busyWindows = events
+    .filter((event) => event.startDate && event.endDate)
+    .map((event) => ({
+      start: new Date(event.startDate),
+      end: new Date(event.endDate),
+    }));
+
+  return buildSlotsFromBusyWindows(busyWindows, "device");
+}
+
+export async function getFollowUpSlotSuggestions(): Promise<CalendarSuggestedSlot[]> {
+  const googleSlots = await getGoogleCalendarSlots();
+  if (googleSlots.length) {
+    return googleSlots;
+  }
+
+  if (Platform.OS === "web") {
+    return buildFallbackSlots();
+  }
+
+  try {
+    const deviceSlots = await getDeviceCalendarSlots();
+    return deviceSlots.length ? deviceSlots : buildFallbackSlots();
+  } catch {
+    return buildFallbackSlots();
+  }
 }
 
 function buildGoogleCalendarUrl(input: CalendarFollowUpInput): string {

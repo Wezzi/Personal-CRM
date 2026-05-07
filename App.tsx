@@ -1,6 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { Alert, Linking, Modal, SafeAreaView, Share, StyleSheet, View, useWindowDimensions } from "react-native";
+import { Alert, AppState, Linking, Modal, SafeAreaView, Share, StyleSheet, View, useWindowDimensions } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { Typography } from "./src/components/ui/Typography";
@@ -9,6 +9,13 @@ import { EventWrapUpSheet } from "./src/components/EventWrapUpSheet";
 import { LiveEventBadge } from "./src/components/LiveEventBadge";
 import { formatCategoryLabel } from "./src/lib/crm";
 import { ensureProfileForUser, getCurrentUsername, signOutCurrentUser } from "./src/lib/auth";
+import {
+  captureAnalyticsEvent,
+  captureInviteAttributionFromUrl,
+  identifyAnalyticsUser,
+  initAnalytics,
+  resetAnalyticsUser,
+} from "./src/lib/analytics";
 import { supabaseConfigMessage } from "./src/lib/supabase";
 import { Button } from "./src/components/ui/Button";
 import { AuthScreen } from "./src/screens/AuthScreen";
@@ -101,6 +108,56 @@ function AppShell() {
     );
   }
 
+
+useEffect(() => {
+  void initAnalytics();
+  void captureInviteAttributionFromUrl();
+  void captureAnalyticsEvent("app_opened");
+}, []);
+
+useEffect(() => {
+  if (!activeUser) {
+    return;
+  }
+
+  void identifyAnalyticsUser(activeUser.id, {
+    email: activeUser.email,
+    username: currentUsername,
+    auth_provider: activeUser.app_metadata?.provider,
+  });
+}, [activeUser, currentUsername]);
+
+useEffect(() => {
+  void captureAnalyticsEvent("screen_viewed", { screen });
+}, [screen]);
+
+useEffect(() => {
+  let previousState = AppState.currentState;
+  const subscription = AppState.addEventListener("change", (nextState) => {
+    if ((previousState === "background" || previousState === "inactive") && nextState === "active") {
+      void captureAnalyticsEvent("returned_to_app");
+    }
+
+    previousState = nextState;
+  });
+
+  function handleVisibilityChange() {
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+      void captureAnalyticsEvent("returned_to_app");
+    }
+  }
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+  }
+
+  return () => {
+    subscription.remove();
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    }
+  };
+}, []);
 
 useEffect(() => {
   let isMounted = true;
@@ -325,6 +382,7 @@ useEffect(() => {
   async function handleLogout() {
     try {
       await signOutCurrentUser();
+      await resetAnalyticsUser();
       setCurrentEvent(null);
       setScreen("home");
     } finally {
