@@ -7,12 +7,13 @@ import { Typography } from "./src/components/ui/Typography";
 import { CurrentEventSheet, CurrentEventValue } from "./src/components/CurrentEventSheet";
 import { EventWrapUpSheet } from "./src/components/EventWrapUpSheet";
 import { LiveEventBadge } from "./src/components/LiveEventBadge";
-import { formatCategoryLabel } from "./src/lib/crm";
+import { EventCategory, formatCategoryLabel, normalizeEventDate } from "./src/lib/crm";
 import { ensureProfileForUser, getCurrentUsername, signOutCurrentUser } from "./src/lib/auth";
 import {
   captureAnalyticsEvent,
   captureInviteAttributionFromUrl,
   identifyAnalyticsUser,
+  InviteAttribution,
   initAnalytics,
   resetAnalyticsUser,
 } from "./src/lib/analytics";
@@ -33,7 +34,20 @@ const ACTIVE_SCREEN_STORAGE_KEY = "blackbook.active_screen";
 const HOME_CAPTURE_OPEN_STORAGE_KEY = "blackbook.home_capture_open";
 const CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY = "blackbook.current_event_sheet_open";
 const CURRENT_EVENT_SHEET_DRAFT_STORAGE_KEY = "blackbook.current_event_sheet_draft";
+const MAGIC_EVENT_ACTIVATED_STORAGE_KEY = "blackbook.magic_event_activated";
 const TUTORIAL_STORAGE_KEY = "blackbook.tutorial.core_flow";
+
+const EVENT_CATEGORIES = new Set<EventCategory>([
+  "networking",
+  "conference",
+  "coffee",
+  "zoom",
+  "investor",
+  "social",
+  "workshop",
+  "community",
+  "other",
+]);
 
 function formatCurrentEventChipLabel(event: CurrentEventValue | null) {
   if (!event) {
@@ -64,6 +78,87 @@ function getWelcomeName(user: NonNullable<ReturnType<typeof useAuth>["user"]> | 
 
 function isScreenKey(value: string | null): value is ScreenKey {
   return value === "home" || value === "event" || value === "person";
+}
+
+function isEventCategory(value?: string): value is EventCategory {
+  return Boolean(value && EVENT_CATEGORIES.has(value as EventCategory));
+}
+
+function titleCaseFromSlug(value: string) {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => {
+      const lowered = part.toLowerCase();
+      if (lowered === "codefirstgirls" || lowered === "cfg") {
+        return "CodeFirstGirls";
+      }
+      if (lowered === "ai") {
+        return "AI";
+      }
+      if (lowered === "uk") {
+        return "UK";
+      }
+      return lowered.charAt(0).toUpperCase() + lowered.slice(1);
+    })
+    .join(" ");
+}
+
+function hasMagicEventInUrl() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return Boolean(
+    params.get("event_source") ||
+    params.get("event") ||
+    params.get("event_slug") ||
+    params.get("source") ||
+    params.get("event_name") ||
+    params.get("eventName")
+  );
+}
+
+function getMagicEventCategory(attribution: InviteAttribution): Pick<CurrentEventValue, "category" | "customCategoryLabel"> {
+  const rawCategory = attribution.eventCategory?.trim().toLowerCase();
+  if (isEventCategory(rawCategory)) {
+    return { category: rawCategory, customCategoryLabel: null };
+  }
+
+  if (rawCategory) {
+    return { category: "other", customCategoryLabel: titleCaseFromSlug(rawCategory) };
+  }
+
+  const source = attribution.eventSource?.toLowerCase() || "";
+  if (source.includes("hackathon")) {
+    return { category: "other", customCategoryLabel: "Hackathon" };
+  }
+  if (source.includes("meetup") || source.includes("mixer")) {
+    return { category: "networking", customCategoryLabel: null };
+  }
+  if (source.includes("summit") || source.includes("conference")) {
+    return { category: "conference", customCategoryLabel: null };
+  }
+
+  return { category: "community", customCategoryLabel: null };
+}
+
+function buildMagicCurrentEvent(attribution: InviteAttribution): CurrentEventValue | null {
+  const eventSource = attribution.eventSource?.trim();
+  const eventName = attribution.eventName?.trim() || (eventSource ? titleCaseFromSlug(eventSource) : "");
+  if (!eventName) {
+    return null;
+  }
+
+  const category = getMagicEventCategory(attribution);
+
+  return {
+    name: eventName,
+    category: category.category,
+    customCategoryLabel: category.customCategoryLabel,
+    eventDate: normalizeEventDate(attribution.eventDate) || null,
+  };
 }
 
 function AppShell() {
@@ -242,7 +337,32 @@ useEffect(() => {
   let isMounted = true;
 
   async function hydrateCurrentEvent() {
+    const attribution = await captureInviteAttributionFromUrl();
+    const magicEvent = buildMagicCurrentEvent(attribution);
+    const magicEventSource = attribution.eventSource || magicEvent?.name || "";
+    const hasMagicEventParam = hasMagicEventInUrl();
     const raw = await AsyncStorage.getItem(CURRENT_EVENT_STORAGE_KEY);
+    const activatedMagicEventSource = await AsyncStorage.getItem(MAGIC_EVENT_ACTIVATED_STORAGE_KEY);
+
+    if (
+      magicEvent &&
+      isMounted &&
+      (hasMagicEventParam || !raw) &&
+      (hasMagicEventParam || activatedMagicEventSource !== magicEventSource)
+    ) {
+      setCurrentEvent(magicEvent);
+      setCurrentEventOpen(false);
+      await AsyncStorage.setItem(MAGIC_EVENT_ACTIVATED_STORAGE_KEY, magicEventSource);
+      void captureAnalyticsEvent("magic_event_activated", {
+        event_source: attribution.eventSource,
+        event_name: magicEvent.name,
+        event_category: magicEvent.customCategoryLabel || magicEvent.category,
+        user_role: attribution.userRole,
+        from_url: hasMagicEventParam,
+      });
+      return;
+    }
+
     if (!raw || !isMounted) {
       return;
     }
@@ -308,7 +428,13 @@ useEffect(() => {
   }
 
   if (!activeUser) {
-    return <AuthScreen authError={authError} onAuthenticated={() => clearAuthError()} />;
+    return (
+      <AuthScreen
+        authError={authError}
+        inviteEventLabel={currentEvent ? formatCurrentEventChipLabel(currentEvent).replace(/^Current:\s*/, "") : null}
+        onAuthenticated={() => clearAuthError()}
+      />
+    );
   }
 
   async function handleReportBug() {

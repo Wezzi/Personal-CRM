@@ -12,6 +12,7 @@ type AuthScreenProps = {
   authError?: string | null;
   onAuthenticated?: (message: string) => void;
   onCancel?: () => void;
+  inviteEventLabel?: string | null;
 };
 
 type BannerState = {
@@ -23,6 +24,7 @@ export function AuthScreen({
   authError = null,
   onAuthenticated,
   onCancel,
+  inviteEventLabel = null,
 }: AuthScreenProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -102,6 +104,16 @@ export function AuthScreen({
             Capture the person, keep the context, and come back to the exact next step when it is time to follow up.
           </Typography>
         </View>
+
+        {inviteEventLabel ? (
+          <Card style={styles.inviteEventCard}>
+            <Typography variant="caption">Event link active</Typography>
+            <Typography variant="h2">{inviteEventLabel}</Typography>
+            <Typography variant="body" style={styles.helperText}>
+              Sign in and Capture will automatically attach new contacts to this event.
+            </Typography>
+          </Card>
+        ) : null}
 
         <Card style={styles.modeCard}>
           {!isCodeSent ? (
@@ -262,6 +274,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   modeCard: {
     gap: 16,
+  },
+  inviteEventCard: {
+    gap: 8,
+    borderColor: colors.primaryAction,
   },
   inputBlock: {
     gap: 8,

@@ -5,6 +5,9 @@ type AnalyticsProperties = Record<string, string | number | boolean | null | und
 
 export type InviteAttribution = {
   eventSource?: string;
+  eventName?: string;
+  eventCategory?: string;
+  eventDate?: string;
   userRole?: string;
   utmSource?: string;
   utmMedium?: string;
@@ -71,6 +74,9 @@ export async function captureInviteAttributionFromUrl() {
       params.get("event_slug") ||
       params.get("source") ||
       undefined,
+    eventName: params.get("event_name") || params.get("eventName") || params.get("name") || undefined,
+    eventCategory: params.get("event_category") || params.get("eventCategory") || undefined,
+    eventDate: params.get("event_date") || params.get("eventDate") || undefined,
     userRole: params.get("user_role") || params.get("role") || undefined,
     utmSource: params.get("utm_source") || undefined,
     utmMedium: params.get("utm_medium") || undefined,
@@ -110,6 +116,9 @@ export async function identifyAnalyticsUser(userId: string, properties: Analytic
     ...cleanProperties({
       ...properties,
       event_source: attribution.eventSource,
+      event_name: attribution.eventName,
+      event_category: attribution.eventCategory,
+      event_date: attribution.eventDate,
       user_role: attribution.userRole,
       utm_source: attribution.utmSource,
       utm_medium: attribution.utmMedium,
@@ -129,6 +138,9 @@ export async function captureAnalyticsEvent(name: string, properties: AnalyticsP
     ...cleanProperties({
       ...properties,
       event_source: attribution.eventSource,
+      event_name: attribution.eventName,
+      event_category: attribution.eventCategory,
+      event_date: attribution.eventDate,
       user_role: attribution.userRole,
       utm_source: attribution.utmSource,
       utm_medium: attribution.utmMedium,
