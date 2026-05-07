@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { CurrentEventValue } from "../components/CurrentEventSheet";
 import { LiveEventBadge } from "../components/LiveEventBadge";
@@ -44,6 +45,15 @@ type EventScreenProps = {
   onEndCurrentEvent?: () => void;
 };
 
+type SavedEventEditorState = {
+  isOpen: boolean;
+  mode: "create" | "edit";
+  selectedEventId: string | null;
+  draft: EventEditorDraft;
+};
+
+const EVENT_EDITOR_STATE_STORAGE_KEY = "blackbook.event_editor_state";
+
 function toDateInputValue(date: Date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
@@ -69,6 +79,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
   const [deleteArmedEventId, setDeleteArmedEventId] = useState<string | null>(null);
   const [eventEditorMode, setEventEditorMode] = useState<"create" | "edit">("create");
   const [eventDraft, setEventDraft] = useState<EventEditorDraft>({ name: "", category: "", eventDate: getRelativeDateInputValue(0) });
+  const [hasHydratedEventEditorState, setHasHydratedEventEditorState] = useState(false);
   const quickDateChoices = useMemo(
     () => [
       { label: "Yesterday", value: getRelativeDateInputValue(-1) },
@@ -262,6 +273,64 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
     loadEventData();
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function hydrateEventEditorState() {
+      const rawState = await AsyncStorage.getItem(EVENT_EDITOR_STATE_STORAGE_KEY);
+      if (!rawState) {
+        if (isMounted) {
+          setHasHydratedEventEditorState(true);
+        }
+        return;
+      }
+
+      try {
+        const savedState = JSON.parse(rawState) as SavedEventEditorState;
+        if (isMounted && savedState.isOpen) {
+          setEventEditorMode(savedState.mode);
+          setSelectedEventId(savedState.selectedEventId);
+          setEventDraft(savedState.draft);
+          setEventEditorOpen(true);
+        }
+      } catch {
+        await AsyncStorage.removeItem(EVENT_EDITOR_STATE_STORAGE_KEY);
+      } finally {
+        if (isMounted) {
+          setHasHydratedEventEditorState(true);
+        }
+      }
+    }
+
+    void hydrateEventEditorState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedEventEditorState) {
+      return;
+    }
+
+    async function persistEventEditorState() {
+      const payload: SavedEventEditorState = {
+        isOpen: isEventEditorOpen,
+        mode: eventEditorMode,
+        selectedEventId,
+        draft: eventDraft,
+      };
+      await AsyncStorage.setItem(EVENT_EDITOR_STATE_STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    void persistEventEditorState();
+  }, [eventDraft, eventEditorMode, hasHydratedEventEditorState, isEventEditorOpen, selectedEventId]);
+
+  async function clearEventEditorState() {
+    await AsyncStorage.removeItem(EVENT_EDITOR_STATE_STORAGE_KEY);
+  }
+
   function openCreateEvent() {
     setEventEditorMode("create");
     setEventDraft({
@@ -269,6 +338,19 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
       category: currentEvent?.category || "",
       eventDate: getRelativeDateInputValue(0),
     });
+    void AsyncStorage.setItem(
+      EVENT_EDITOR_STATE_STORAGE_KEY,
+      JSON.stringify({
+        isOpen: true,
+        mode: "create",
+        selectedEventId,
+        draft: {
+          name: currentEvent?.name || "",
+          category: currentEvent?.category || "",
+          eventDate: getRelativeDateInputValue(0),
+        },
+      } satisfies SavedEventEditorState)
+    );
     setEventEditorOpen(true);
   }
 
@@ -279,6 +361,15 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
       category: currentEvent?.category || "",
       eventDate: getRelativeDateInputValue(0),
     });
+    void AsyncStorage.setItem(
+      EVENT_EDITOR_STATE_STORAGE_KEY,
+      JSON.stringify({
+        isOpen: true,
+        mode: "create",
+        selectedEventId,
+        draft: { name, category: currentEvent?.category || "", eventDate: getRelativeDateInputValue(0) },
+      } satisfies SavedEventEditorState)
+    );
     setEventEditorOpen(true);
   }
 
@@ -294,6 +385,19 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
       category: targetEvent.category,
       eventDate: targetEvent.eventDate || "",
     });
+    void AsyncStorage.setItem(
+      EVENT_EDITOR_STATE_STORAGE_KEY,
+      JSON.stringify({
+        isOpen: true,
+        mode: "edit",
+        selectedEventId: targetEvent.id,
+        draft: {
+          name: targetEvent.name,
+          category: targetEvent.category,
+          eventDate: targetEvent.eventDate || "",
+        },
+      } satisfies SavedEventEditorState)
+    );
     setEventEditorOpen(true);
   }
 
@@ -328,6 +432,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
       }
 
       setEventEditorOpen(false);
+      await clearEventEditorState();
       await loadEventData();
       Alert.alert(
         eventEditorMode === "edit" ? "Event updated" : "Event added",
@@ -339,6 +444,11 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
     } finally {
       setSavingEvent(false);
     }
+  }
+
+  function closeEventEditor() {
+    void clearEventEditorState();
+    setEventEditorOpen(false);
   }
 
   function isCurrentEvent(event: (typeof events)[number]) {
@@ -652,7 +762,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                 </View>
                 <Button
                   label="Close"
-                  onPress={() => setEventEditorOpen(false)}
+                  onPress={closeEventEditor}
                   variant="ghost"
                   fullWidth={false}
                   size="compact"
@@ -721,7 +831,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                   loading={isSavingEvent}
                   disabled={!eventDraft.name.trim()}
                 />
-                <Button label="Cancel" onPress={() => setEventEditorOpen(false)} variant="ghost" />
+                <Button label="Cancel" onPress={closeEventEditor} variant="ghost" />
               </View>
             </View>
           </SafeAreaView>

@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 
 import { Button } from "./ui/Button";
@@ -33,6 +34,16 @@ type PersonQuickActionsButtonProps = {
   person: PersonInsight;
   onChanged?: () => void | Promise<void>;
 };
+
+type SavedQuickActionState = {
+  personId: string;
+  modal: "draft" | "reminder";
+  draftText: string;
+  selectedMethod: ContactMethod | null;
+  customReminderDate: string;
+};
+
+const QUICK_ACTION_STATE_STORAGE_KEY = "blackbook.quick_action_state";
 
 function buildMessageForPerson(person: PersonInsight) {
   return buildReconnectDraft({
@@ -123,8 +134,73 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
   const contactMethods = useMemo(() => getContactMethods(person), [person]);
   const groupedTimeline = useMemo(() => groupTimeline(timelineItems), [timelineItems]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function hydrateQuickActionState() {
+      const rawState = await AsyncStorage.getItem(QUICK_ACTION_STATE_STORAGE_KEY);
+      if (!rawState) {
+        return;
+      }
+
+      try {
+        const savedState = JSON.parse(rawState) as SavedQuickActionState;
+        if (!isMounted || savedState.personId !== person.id) {
+          return;
+        }
+
+        setDraftText(savedState.draftText);
+        setSelectedMethod(savedState.selectedMethod);
+        setCustomReminderDate(savedState.customReminderDate);
+        setDraftOpen(savedState.modal === "draft");
+        setReminderOpen(savedState.modal === "reminder");
+      } catch {
+        await AsyncStorage.removeItem(QUICK_ACTION_STATE_STORAGE_KEY);
+      }
+    }
+
+    void hydrateQuickActionState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [person.id]);
+
+  useEffect(() => {
+    async function persistQuickActionState() {
+      if (!isDraftOpen && !isReminderOpen) {
+        return;
+      }
+
+      const payload: SavedQuickActionState = {
+        personId: person.id,
+        modal: isDraftOpen ? "draft" : "reminder",
+        draftText,
+        selectedMethod,
+        customReminderDate,
+      };
+      await AsyncStorage.setItem(QUICK_ACTION_STATE_STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    void persistQuickActionState();
+  }, [customReminderDate, draftText, isDraftOpen, isReminderOpen, person.id, selectedMethod]);
+
+  async function clearQuickActionState() {
+    await AsyncStorage.removeItem(QUICK_ACTION_STATE_STORAGE_KEY);
+  }
+
   function closeMenu() {
     setMenuOpen(false);
+  }
+
+  function closeDraft() {
+    void clearQuickActionState();
+    setDraftOpen(false);
+  }
+
+  function closeReminder() {
+    void clearQuickActionState();
+    setReminderOpen(false);
   }
 
   async function refreshParent() {
@@ -203,6 +279,7 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
 
       await logDraft(selectedMethod);
       setDraftOpen(false);
+      await clearQuickActionState();
       await refreshParent();
     } catch (error) {
       Alert.alert("Follow-up failed", error instanceof Error ? error.message : "Could not open that follow-up method.");
@@ -229,6 +306,7 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
         rawNote: `Reminder set.\nNext step: Follow up\nFollow up date: ${date}`,
       });
       setReminderOpen(false);
+      await clearQuickActionState();
       await refreshParent();
       Alert.alert("Reminder set", `${person.name} will surface on ${formatFollowUpDate(date)}.`);
     } catch (error) {
@@ -293,9 +371,9 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
         </View>
       </Modal>
 
-      <Modal visible={isDraftOpen} transparent animationType="fade" onRequestClose={() => setDraftOpen(false)}>
+      <Modal visible={isDraftOpen} transparent animationType="fade" onRequestClose={closeDraft}>
         <View style={styles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setDraftOpen(false)} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeDraft} />
           <Card style={styles.modalCard}>
             <Typography variant="h2">Draft follow-up</Typography>
             <View style={styles.methodRow}>
@@ -319,16 +397,16 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
               placeholderTextColor={colors.textTertiary}
             />
             <View style={styles.actionRow}>
-              <Button label="Cancel" onPress={() => setDraftOpen(false)} variant="ghost" fullWidth={false} size="compact" />
+              <Button label="Cancel" onPress={closeDraft} variant="ghost" fullWidth={false} size="compact" />
               <Button label="Continue" onPress={() => void handleSendDraft()} fullWidth={false} size="compact" />
             </View>
           </Card>
         </View>
       </Modal>
 
-      <Modal visible={isReminderOpen} transparent animationType="fade" onRequestClose={() => setReminderOpen(false)}>
+      <Modal visible={isReminderOpen} transparent animationType="fade" onRequestClose={closeReminder}>
         <View style={styles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setReminderOpen(false)} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeReminder} />
           <Card style={styles.modalCard}>
             <Typography variant="h2">Set reminder</Typography>
             <View style={styles.methodRow}>
@@ -346,7 +424,7 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
               autoCorrect={false}
             />
             <View style={styles.actionRow}>
-              <Button label="Cancel" onPress={() => setReminderOpen(false)} variant="ghost" fullWidth={false} size="compact" />
+              <Button label="Cancel" onPress={closeReminder} variant="ghost" fullWidth={false} size="compact" />
               <Button label="Set custom" onPress={() => void setReminder(customReminderDate.trim())} fullWidth={false} size="compact" />
             </View>
           </Card>

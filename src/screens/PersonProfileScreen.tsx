@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Linking, Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 
 import { CurrentEventValue } from "../components/CurrentEventSheet";
@@ -42,6 +43,31 @@ type UpdateInteractionType = "met" | "called" | "emailed" | "messaged" | "follow
 type UpdateStatus = "warm" | "needsAction" | "waiting" | "doneForNow";
 export type PersonStatusMode = "all" | "today" | "recent" | "stale";
 
+type UpdateDraftState = {
+  interactionType: UpdateInteractionType;
+  shortNote: string;
+  nextStep: string;
+  dueDate: string;
+  status: UpdateStatus;
+};
+
+type SavedPeopleCaptureState = {
+  isOpen: boolean;
+  mode: CaptureMode;
+  selectedPersonId: string | null;
+  draft: Partial<ParsedPersonDraft> | null;
+};
+
+type SavedLogUpdateState = {
+  isOpen: boolean;
+  personId: string | null;
+  draft: UpdateDraftState;
+};
+
+const PEOPLE_CAPTURE_STATE_STORAGE_KEY = "blackbook.people_capture_state";
+const PEOPLE_CAPTURE_DRAFT_STORAGE_KEY = "blackbook.people_capture_draft";
+const PEOPLE_LOG_UPDATE_STATE_STORAGE_KEY = "blackbook.people_log_update_state";
+
 const interactionTypeOptions: Array<{ label: string; value: UpdateInteractionType }> = [
   { label: "Met", value: "met" },
   { label: "Called", value: "called" },
@@ -80,13 +106,16 @@ export function PersonProfileScreen({
   const [editorDraft, setEditorDraft] = useState<Partial<ParsedPersonDraft> | null>(null);
   const [isUpdateModalOpen, setUpdateModalOpen] = useState(false);
   const [updatePerson, setUpdatePerson] = useState<(typeof people)[number] | null>(null);
-  const [updateDraft, setUpdateDraft] = useState({
+  const [updateDraft, setUpdateDraft] = useState<UpdateDraftState>({
     interactionType: "met" as UpdateInteractionType,
     shortNote: "",
     nextStep: "",
     dueDate: "",
     status: "warm" as UpdateStatus,
   });
+  const [hasHydratedPeopleCaptureState, setHasHydratedPeopleCaptureState] = useState(false);
+  const [hasHydratedLogUpdateState, setHasHydratedLogUpdateState] = useState(false);
+  const [pendingUpdatePersonId, setPendingUpdatePersonId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("name");
@@ -209,6 +238,125 @@ export function PersonProfileScreen({
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
+    async function hydratePeopleCaptureState() {
+      const rawState = await AsyncStorage.getItem(PEOPLE_CAPTURE_STATE_STORAGE_KEY);
+      if (!rawState) {
+        if (isMounted) {
+          setHasHydratedPeopleCaptureState(true);
+        }
+        return;
+      }
+
+      try {
+        const savedState = JSON.parse(rawState) as SavedPeopleCaptureState;
+        if (isMounted && savedState.isOpen) {
+          setEditorMode(savedState.mode);
+          setEditorDraft(savedState.draft);
+          setSelectedPersonId(savedState.selectedPersonId);
+          setCaptureOpen(true);
+        }
+      } catch {
+        await AsyncStorage.removeItem(PEOPLE_CAPTURE_STATE_STORAGE_KEY);
+        await AsyncStorage.removeItem(PEOPLE_CAPTURE_DRAFT_STORAGE_KEY);
+      } finally {
+        if (isMounted) {
+          setHasHydratedPeopleCaptureState(true);
+        }
+      }
+    }
+
+    void hydratePeopleCaptureState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedPeopleCaptureState) {
+      return;
+    }
+
+    async function persistPeopleCaptureState() {
+      const payload: SavedPeopleCaptureState = {
+        isOpen: isCaptureOpen,
+        mode: editorMode,
+        selectedPersonId,
+        draft: editorDraft,
+      };
+      await AsyncStorage.setItem(PEOPLE_CAPTURE_STATE_STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    void persistPeopleCaptureState();
+  }, [editorDraft, editorMode, hasHydratedPeopleCaptureState, isCaptureOpen, selectedPersonId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function hydrateLogUpdateState() {
+      const rawState = await AsyncStorage.getItem(PEOPLE_LOG_UPDATE_STATE_STORAGE_KEY);
+      if (!rawState) {
+        if (isMounted) {
+          setHasHydratedLogUpdateState(true);
+        }
+        return;
+      }
+
+      try {
+        const savedState = JSON.parse(rawState) as SavedLogUpdateState;
+        if (isMounted && savedState.isOpen) {
+          setUpdateDraft(savedState.draft);
+          setPendingUpdatePersonId(savedState.personId);
+          setUpdateModalOpen(true);
+        }
+      } catch {
+        await AsyncStorage.removeItem(PEOPLE_LOG_UPDATE_STATE_STORAGE_KEY);
+      } finally {
+        if (isMounted) {
+          setHasHydratedLogUpdateState(true);
+        }
+      }
+    }
+
+    void hydrateLogUpdateState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingUpdatePersonId || !people.length) {
+      return;
+    }
+
+    const restoredPerson = people.find((person) => person.id === pendingUpdatePersonId);
+    if (restoredPerson) {
+      setUpdatePerson(restoredPerson);
+      setPendingUpdatePersonId(null);
+    }
+  }, [pendingUpdatePersonId, people]);
+
+  useEffect(() => {
+    if (!hasHydratedLogUpdateState) {
+      return;
+    }
+
+    async function persistLogUpdateState() {
+      const payload: SavedLogUpdateState = {
+        isOpen: isUpdateModalOpen,
+        personId: updatePerson?.id || pendingUpdatePersonId,
+        draft: updateDraft,
+      };
+      await AsyncStorage.setItem(PEOPLE_LOG_UPDATE_STATE_STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    void persistLogUpdateState();
+  }, [hasHydratedLogUpdateState, isUpdateModalOpen, pendingUpdatePersonId, updateDraft, updatePerson?.id]);
+
+  useEffect(() => {
     if (!forcedStatusMode) {
       return;
     }
@@ -278,6 +426,27 @@ export function PersonProfileScreen({
     setShowPendingExternalReturn(false);
   }
 
+  async function clearPeopleCaptureState() {
+    await AsyncStorage.removeItem(PEOPLE_CAPTURE_STATE_STORAGE_KEY);
+    await AsyncStorage.removeItem(PEOPLE_CAPTURE_DRAFT_STORAGE_KEY);
+  }
+
+  async function clearLogUpdateState() {
+    await AsyncStorage.removeItem(PEOPLE_LOG_UPDATE_STATE_STORAGE_KEY);
+  }
+
+  function closePeopleCapture() {
+    void clearPeopleCaptureState();
+    setCaptureOpen(false);
+  }
+
+  function closeLogUpdate() {
+    void clearLogUpdateState();
+    setUpdateModalOpen(false);
+    setUpdatePerson(null);
+    setPendingUpdatePersonId(null);
+  }
+
   function getDefaultUpdateStatus(person: (typeof people)[number]): UpdateStatus {
     if (person.followUpState === "dueToday" || person.followUpState === "overdue") {
       return "needsAction";
@@ -291,15 +460,20 @@ export function PersonProfileScreen({
   }
 
   function openLogUpdateForPerson(person: (typeof people)[number]) {
-    setSelectedPersonId(person.id);
-    setUpdatePerson(person);
-    setUpdateDraft({
+    const nextDraft: UpdateDraftState = {
       interactionType: currentEvent ? "met" : "called",
       shortNote: "",
       nextStep: person.nextStep || "",
       dueDate: person.nextFollowUpAt || "",
       status: getDefaultUpdateStatus(person),
-    });
+    };
+    setSelectedPersonId(person.id);
+    setUpdatePerson(person);
+    setUpdateDraft(nextDraft);
+    void AsyncStorage.setItem(
+      PEOPLE_LOG_UPDATE_STATE_STORAGE_KEY,
+      JSON.stringify({ isOpen: true, personId: person.id, draft: nextDraft } satisfies SavedLogUpdateState)
+    );
     setUpdateModalOpen(true);
   }
 
@@ -318,8 +492,7 @@ export function PersonProfileScreen({
   }
 
   function openCreatePerson(initialName = searchQuery.trim()) {
-    setEditorMode("createPerson");
-    setEditorDraft({
+    const nextDraft: Partial<ParsedPersonDraft> = {
       name: initialName,
       priority: "medium",
       tags: [],
@@ -333,7 +506,13 @@ export function PersonProfileScreen({
       nextStep: "",
       nextFollowUpAt: "",
       followUpPreset: "",
-    });
+    };
+    setEditorMode("createPerson");
+    setEditorDraft(nextDraft);
+    void AsyncStorage.setItem(
+      PEOPLE_CAPTURE_STATE_STORAGE_KEY,
+      JSON.stringify({ isOpen: true, mode: "createPerson", selectedPersonId: null, draft: nextDraft } satisfies SavedPeopleCaptureState)
+    );
     setCaptureOpen(true);
   }
 
@@ -352,9 +531,7 @@ export function PersonProfileScreen({
       return;
     }
 
-    setSelectedPersonId(person.id);
-    setEditorMode("edit");
-    setEditorDraft({
+    const nextDraft: Partial<ParsedPersonDraft> = {
       name: person.name,
       priority: person.priority,
       tags: person.tags,
@@ -369,7 +546,14 @@ export function PersonProfileScreen({
       nextStep: person.nextStep || "",
       nextFollowUpAt: person.nextFollowUpAt || "",
       followUpPreset: "",
-    });
+    };
+    setSelectedPersonId(person.id);
+    setEditorMode("edit");
+    setEditorDraft(nextDraft);
+    void AsyncStorage.setItem(
+      PEOPLE_CAPTURE_STATE_STORAGE_KEY,
+      JSON.stringify({ isOpen: true, mode: "edit", selectedPersonId: person.id, draft: nextDraft } satisfies SavedPeopleCaptureState)
+    );
     setCaptureOpen(true);
   }
 
@@ -433,6 +617,8 @@ export function PersonProfileScreen({
 
       setUpdateModalOpen(false);
       setUpdatePerson(null);
+      setPendingUpdatePersonId(null);
+      await clearLogUpdateState();
       await loadProfileData();
       Alert.alert("Update logged", `${updatePerson.name}'s timeline is up to date.`);
     } catch (error) {
@@ -501,6 +687,7 @@ export function PersonProfileScreen({
         }
 
         setCaptureOpen(false);
+        await clearPeopleCaptureState();
         await loadProfileData();
         Alert.alert("Contact updated", `${draft.name} is ready for follow-up.`);
         return;
@@ -558,6 +745,7 @@ export function PersonProfileScreen({
       });
 
       setCaptureOpen(false);
+      await clearPeopleCaptureState();
       await loadProfileData();
       Alert.alert("Timeline updated", selectedPerson ? `${selectedPerson.name}'s next step is saved.` : "New contact added with context.");
     } catch (error) {
@@ -1388,7 +1576,7 @@ export function PersonProfileScreen({
 
         <CaptureModal
           visible={isCaptureOpen}
-          onClose={() => setCaptureOpen(false)}
+          onClose={closePeopleCapture}
           onSave={handleSaveInteraction}
           isSaving={isSaving}
           initialDraft={editorDraft}
@@ -1396,6 +1584,8 @@ export function PersonProfileScreen({
           title={editorMode === "edit" ? "Edit Contact" : editorMode === "createPerson" ? "Add Person" : "Add Interaction"}
           saveLabel={editorMode === "edit" ? "Save Changes" : editorMode === "createPerson" ? "Save Person" : "Save Interaction"}
           showQuickCapture={editorMode === "createPerson"}
+          draftStorageKey={PEOPLE_CAPTURE_DRAFT_STORAGE_KEY}
+          autosaveWithInitialDraft
         />
 
         <Modal visible={isUpdateModalOpen} animationType="slide" presentationStyle="pageSheet">
@@ -1411,10 +1601,7 @@ export function PersonProfileScreen({
                 </View>
                 <Button
                   label="Close"
-                  onPress={() => {
-                    setUpdateModalOpen(false);
-                    setUpdatePerson(null);
-                  }}
+                  onPress={closeLogUpdate}
                   variant="ghost"
                   fullWidth={false}
                   size="compact"

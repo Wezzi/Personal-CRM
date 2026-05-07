@@ -117,6 +117,7 @@ type CaptureModalProps = {
   initialMethod?: QuickCaptureMethod;
   showQuickCapture?: boolean;
   draftStorageKey?: string;
+  autosaveWithInitialDraft?: boolean;
 };
 
 type SavedCaptureDraft = {
@@ -274,6 +275,7 @@ export function CaptureModal({
   initialMethod = "manual",
   showQuickCapture = true,
   draftStorageKey,
+  autosaveWithInitialDraft = false,
 }: CaptureModalProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -319,7 +321,7 @@ export function CaptureModal({
       };
 
       let savedDraft: SavedCaptureDraft | null = null;
-      if (draftStorageKey && !initialDraft) {
+      if (draftStorageKey && (!initialDraft || autosaveWithInitialDraft)) {
         const rawSavedDraft = await AsyncStorage.getItem(draftStorageKey);
         if (rawSavedDraft) {
           try {
@@ -364,7 +366,7 @@ export function CaptureModal({
   }, [initialDraft, initialMethod, lockedEvent, visible]);
 
   useEffect(() => {
-    if (!visible || !draftStorageKey || !hasHydratedSavedDraft || initialDraft) {
+    if (!visible || !draftStorageKey || !hasHydratedSavedDraft || (initialDraft && !autosaveWithInitialDraft)) {
       return;
     }
 
@@ -380,7 +382,7 @@ export function CaptureModal({
     }
 
     void persistDraft();
-  }, [activeMethod, draft, draftStorageKey, hasHydratedSavedDraft, initialDraft, isFollowUpManuallySet, pasteInput, visible]);
+  }, [activeMethod, autosaveWithInitialDraft, draft, draftStorageKey, hasHydratedSavedDraft, initialDraft, isFollowUpManuallySet, pasteInput, visible]);
 
   useEffect(() => {
     if (!visible || isFollowUpManuallySet) {

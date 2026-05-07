@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
 import { Modal, SafeAreaView, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { EVENT_CATEGORY_OPTIONS, EventCategory, formatCategoryLabel } from "../lib/crm";
 import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
@@ -21,6 +22,7 @@ type CurrentEventSheetProps = {
   onClose: () => void;
   onSave: (value: CurrentEventValue) => void;
   onClear: () => void;
+  draftStorageKey?: string;
 };
 
 function formatCurrentEventType(value: CurrentEventValue | { category: EventCategory; customCategoryLabel?: string | null }) {
@@ -45,7 +47,14 @@ function getRelativeDateInputValue(offsetDays: number) {
   return toDateInputValue(date);
 }
 
-export function CurrentEventSheet({ visible, value, onClose, onSave, onClear }: CurrentEventSheetProps) {
+type CurrentEventDraft = {
+  name: string;
+  category: EventCategory;
+  eventDate: string;
+  customCategoryLabel: string;
+};
+
+export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, draftStorageKey }: CurrentEventSheetProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
@@ -54,19 +63,69 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear }: 
   const [category, setCategory] = useState<EventCategory>("networking");
   const [eventDate, setEventDate] = useState("");
   const [customCategoryLabel, setCustomCategoryLabel] = useState("");
+  const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
 
   useEffect(() => {
-    if (visible) {
-      setName(value?.name || "");
-      setCategory(value?.category || "networking");
-      setEventDate(value?.eventDate || "");
-      setCustomCategoryLabel(value?.customCategoryLabel || "");
+    if (!visible) {
+      return;
     }
-  }, [value, visible]);
+
+    let isMounted = true;
+
+    async function hydrateDraft() {
+      setHasHydratedDraft(false);
+      let savedDraft: CurrentEventDraft | null = null;
+      if (draftStorageKey) {
+        const rawDraft = await AsyncStorage.getItem(draftStorageKey);
+        if (rawDraft) {
+          try {
+            savedDraft = JSON.parse(rawDraft) as CurrentEventDraft;
+          } catch {
+            await AsyncStorage.removeItem(draftStorageKey);
+          }
+        }
+      }
+
+      if (!isMounted) {
+        return;
+      }
+
+      setName(savedDraft?.name ?? value?.name ?? "");
+      setCategory(savedDraft?.category ?? value?.category ?? "networking");
+      setEventDate(savedDraft?.eventDate ?? value?.eventDate ?? "");
+      setCustomCategoryLabel(savedDraft?.customCategoryLabel ?? value?.customCategoryLabel ?? "");
+      setHasHydratedDraft(true);
+    }
+
+    void hydrateDraft();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [draftStorageKey, value, visible]);
+
+  useEffect(() => {
+    if (!visible || !draftStorageKey || !hasHydratedDraft) {
+      return;
+    }
+
+    async function persistDraft() {
+      await AsyncStorage.setItem(
+        draftStorageKey as string,
+        JSON.stringify({ name, category, eventDate, customCategoryLabel } satisfies CurrentEventDraft)
+      );
+    }
+
+    void persistDraft();
+  }, [category, customCategoryLabel, draftStorageKey, eventDate, hasHydratedDraft, name, visible]);
 
   function handleSave() {
     if (!name.trim()) {
       return;
+    }
+
+    if (draftStorageKey) {
+      void AsyncStorage.removeItem(draftStorageKey);
     }
 
     onSave({

@@ -35,6 +35,7 @@ type SignalFilter = "all" | "tracked" | "contactedToday" | "needNudge";
 
 const HOME_CAPTURE_OPEN_STORAGE_KEY = "blackbook.home_capture_open";
 const HOME_CAPTURE_DRAFT_STORAGE_KEY = "blackbook.home_capture_draft";
+const ACTIVE_SCREEN_STORAGE_KEY = "blackbook.active_screen";
 
 export function HomeScreen({
   currentEvent,
@@ -193,6 +194,7 @@ export function HomeScreen({
       });
 
       setCaptureOpen(false);
+      await AsyncStorage.setItem(HOME_CAPTURE_OPEN_STORAGE_KEY, "false");
       await loadData();
       Alert.alert("Contact added", `${draft.name} saved${eventName && eventName !== "No event" ? ` to ${eventName}` : ""}.`);
     } catch (error) {
@@ -205,7 +207,14 @@ export function HomeScreen({
 
   function openCapture() {
     onCaptureCoachDone?.();
+    void AsyncStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, "home");
+    void AsyncStorage.setItem(HOME_CAPTURE_OPEN_STORAGE_KEY, "true");
     setCaptureOpen(true);
+  }
+
+  function closeCapture() {
+    void AsyncStorage.setItem(HOME_CAPTURE_OPEN_STORAGE_KEY, "false");
+    setCaptureOpen(false);
   }
 
   function renderPersonCard(person: (typeof people)[number], variant: "default" | "muted" = "default") {
@@ -388,7 +397,7 @@ export function HomeScreen({
 
         <CaptureModal
           visible={isCaptureOpen}
-          onClose={() => setCaptureOpen(false)}
+          onClose={closeCapture}
           onSave={handleSaveDraft}
           isSaving={isSaving}
           lockedEvent={currentEvent}

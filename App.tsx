@@ -23,6 +23,9 @@ type TutorialStep = "setEvent" | "capture";
 
 const CURRENT_EVENT_STORAGE_KEY = "blackbook.current_event";
 const ACTIVE_SCREEN_STORAGE_KEY = "blackbook.active_screen";
+const HOME_CAPTURE_OPEN_STORAGE_KEY = "blackbook.home_capture_open";
+const CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY = "blackbook.current_event_sheet_open";
+const CURRENT_EVENT_SHEET_DRAFT_STORAGE_KEY = "blackbook.current_event_sheet_draft";
 const TUTORIAL_STORAGE_KEY = "blackbook.tutorial.core_flow";
 
 function formatCurrentEventChipLabel(event: CurrentEventValue | null) {
@@ -143,9 +146,16 @@ useEffect(() => {
   let isMounted = true;
 
   async function hydrateActiveScreen() {
+    const savedHomeCaptureState = await AsyncStorage.getItem(HOME_CAPTURE_OPEN_STORAGE_KEY);
     const savedScreen = await AsyncStorage.getItem(ACTIVE_SCREEN_STORAGE_KEY);
-    if (isMounted && isScreenKey(savedScreen)) {
+    const savedCurrentEventSheetState = await AsyncStorage.getItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY);
+    if (isMounted && savedHomeCaptureState === "true") {
+      setScreen("home");
+    } else if (isMounted && isScreenKey(savedScreen)) {
       setScreen(savedScreen);
+    }
+    if (isMounted && savedCurrentEventSheetState === "true") {
+      setCurrentEventOpen(true);
     }
     if (isMounted) {
       setHasHydratedActiveScreen(true);
@@ -334,12 +344,15 @@ useEffect(() => {
   }
 
   function handleOpenTutorialEvent() {
+    void AsyncStorage.setItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY, "true");
     setCurrentEventOpen(true);
   }
 
   function handleSaveCurrentEvent(value: CurrentEventValue) {
     setCurrentEvent(value);
     setCurrentEventOpen(false);
+    void AsyncStorage.setItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY, "false");
+    void AsyncStorage.removeItem(CURRENT_EVENT_SHEET_DRAFT_STORAGE_KEY);
     if (tutorialStep === "setEvent") {
       setTutorialStep("capture");
     }
@@ -347,6 +360,19 @@ useEffect(() => {
 
   function handleClearCurrentEvent() {
     setCurrentEvent(null);
+    setCurrentEventOpen(false);
+    void AsyncStorage.setItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY, "false");
+    void AsyncStorage.removeItem(CURRENT_EVENT_SHEET_DRAFT_STORAGE_KEY);
+  }
+
+  function openCurrentEventSheet() {
+    void AsyncStorage.setItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY, "true");
+    setCurrentEventOpen(true);
+  }
+
+  function closeCurrentEventSheet() {
+    void AsyncStorage.setItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY, "false");
+    void AsyncStorage.removeItem(CURRENT_EVENT_SHEET_DRAFT_STORAGE_KEY);
     setCurrentEventOpen(false);
   }
 
@@ -372,7 +398,7 @@ useEffect(() => {
             <View style={styles.compactTopActions}>
               <Button
                 label={currentEvent ? (isVeryCompactLayout ? "Event" : "Current event") : "Set event"}
-                onPress={() => setCurrentEventOpen(true)}
+                onPress={openCurrentEventSheet}
                 variant="ghost"
                 fullWidth={false}
                 size="compact"
@@ -413,7 +439,7 @@ useEffect(() => {
             />
             <Button
               label={formatCurrentEventChipLabel(currentEvent)}
-              onPress={() => setCurrentEventOpen(true)}
+              onPress={openCurrentEventSheet}
               variant="ghost"
               fullWidth={false}
               size="compact"
@@ -452,7 +478,7 @@ useEffect(() => {
           <LiveEventBadge eventDate={currentEvent.eventDate} />
           <Button
             label={formatCurrentEventChipLabel(currentEvent)}
-            onPress={() => setCurrentEventOpen(true)}
+            onPress={openCurrentEventSheet}
             variant="ghost"
             fullWidth={false}
             size="compact"
@@ -502,9 +528,10 @@ useEffect(() => {
       <CurrentEventSheet
         visible={isCurrentEventOpen}
         value={currentEvent}
-        onClose={() => setCurrentEventOpen(false)}
+        onClose={closeCurrentEventSheet}
         onSave={handleSaveCurrentEvent}
         onClear={handleClearCurrentEvent}
+        draftStorageKey={CURRENT_EVENT_SHEET_DRAFT_STORAGE_KEY}
       />
 
       <EventWrapUpSheet
