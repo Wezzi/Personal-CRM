@@ -90,10 +90,11 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
         return;
       }
 
-      setName(savedDraft?.name ?? value?.name ?? "");
-      setCategory(savedDraft?.category ?? value?.category ?? "networking");
-      setEventDate(savedDraft?.eventDate ?? value?.eventDate ?? "");
-      setCustomCategoryLabel(savedDraft?.customCategoryLabel ?? value?.customCategoryLabel ?? "");
+      const draft = value ? null : savedDraft;
+      setName(value?.name ?? draft?.name ?? "");
+      setCategory(value?.category ?? draft?.category ?? "networking");
+      setEventDate(value?.eventDate ?? draft?.eventDate ?? "");
+      setCustomCategoryLabel(value?.customCategoryLabel ?? draft?.customCategoryLabel ?? "");
       setHasHydratedDraft(true);
     }
 

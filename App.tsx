@@ -353,6 +353,8 @@ useEffect(() => {
       setCurrentEvent(magicEvent);
       setCurrentEventOpen(false);
       await AsyncStorage.setItem(MAGIC_EVENT_ACTIVATED_STORAGE_KEY, magicEventSource);
+      await AsyncStorage.setItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY, "false");
+      await AsyncStorage.removeItem(CURRENT_EVENT_SHEET_DRAFT_STORAGE_KEY);
       void captureAnalyticsEvent("magic_event_activated", {
         event_source: attribution.eventSource,
         event_name: magicEvent.name,
