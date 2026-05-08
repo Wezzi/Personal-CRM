@@ -65,6 +65,13 @@ export function getAvailableCalendarDestinations(): Array<{
 }
 
 function parseFollowUpDate(dateOnly: string): Date {
+  if (dateOnly.includes("T")) {
+    const parsed = new Date(dateOnly);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
   const [year, month, day] = dateOnly.split("-").map((value) => Number(value));
 
   if (!year || !month || !day) {
