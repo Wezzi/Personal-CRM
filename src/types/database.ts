@@ -35,6 +35,38 @@ export type Database = {
 					},
 				];
 			};
+			reminder_preferences: {
+				Row: {
+					created_at: string;
+					email_digest_enabled: boolean;
+					last_digest_sent_on: string | null;
+					updated_at: string;
+					user_id: string;
+				};
+				Insert: {
+					created_at?: string;
+					email_digest_enabled?: boolean;
+					last_digest_sent_on?: string | null;
+					updated_at?: string;
+					user_id: string;
+				};
+				Update: {
+					created_at?: string;
+					email_digest_enabled?: boolean;
+					last_digest_sent_on?: string | null;
+					updated_at?: string;
+					user_id?: string;
+				};
+				Relationships: [
+					{
+						foreignKeyName: "reminder_preferences_user_id_fkey";
+						columns: ["user_id"];
+						isOneToOne: true;
+						referencedRelation: "users";
+						referencedColumns: ["id"];
+					},
+				];
+			};
 			events: {
 				Row: {
 						category: string | null;

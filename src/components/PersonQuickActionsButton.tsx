@@ -20,6 +20,7 @@ import {
   parseDateOnlyString,
   PersonInsight,
 } from "../lib/crm";
+import { captureAnalyticsEvent } from "../lib/analytics";
 import { radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 type ContactMethod = "whatsapp" | "email" | "linkedin" | "phone";
@@ -37,10 +38,13 @@ type PersonQuickActionsButtonProps = {
 
 type SavedQuickActionState = {
   personId: string;
-  modal: "draft" | "reminder";
+  modal: "draft" | "reminder" | "status";
   draftText: string;
   selectedMethod: ContactMethod | null;
   customReminderDate: string;
+  selectedStatus: string;
+  statusNextAction: string;
+  statusFollowUpDate: string;
 };
 
 const QUICK_ACTION_STATE_STORAGE_KEY = "blackbook.quick_action_state";
@@ -63,10 +67,39 @@ function getContactMethods(person: PersonInsight) {
   ].filter(Boolean) as Array<{ method: ContactMethod; label: string }>;
 }
 
+function getPrimaryGoal(person: PersonInsight) {
+  return person.tags.find((tag) =>
+    /business|client|hire|hiring|partner|interesting|other/i.test(tag)
+  ) || person.tags[0] || "Relationship";
+}
+
+function getStatusOptionsForGoal(goal: string) {
+  const normalized = goal.toLowerCase();
+
+  if (/hire|hiring|new hire/.test(normalized)) {
+    return ["Intro chat", "Role fit", "CV / portfolio check", "Interview", "Pass to hiring manager", "Final stage", "Done", "Not a fit"];
+  }
+
+  if (/business|client|sales|opportunity/.test(normalized)) {
+    return ["New lead", "Qualified", "Needs follow-up", "Meeting booked", "Proposal sent", "Negotiating", "Converted", "Not relevant"];
+  }
+
+  if (/partner/.test(normalized)) {
+    return ["Intro chat", "Shared context", "Opportunity mapped", "Intro made", "Collab in progress", "Done", "Not relevant"];
+  }
+
+  if (/interesting/.test(normalized)) {
+    return ["Captured", "Worth revisiting", "Intro opportunity", "Keep warm", "Done"];
+  }
+
+  return ["Captured", "Needs follow-up", "Meeting booked", "Intro made", "Keep warm", "Done", "Not relevant"];
+}
+
 function toTimelineLabel(rawNote: string, eventName?: string | null) {
   const firstLine = rawNote.split(/\r?\n/).find((line) => line.trim())?.trim() || "Note added";
   const followUpDate = extractFollowUpDate(rawNote);
   const updateTypeMatch = rawNote.match(/^Update type:\s*(.+)$/im);
+  const relationshipStatusMatch = rawNote.match(/^Relationship status:\s*(.+)$/im);
   const updateNote = rawNote
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -74,6 +107,8 @@ function toTimelineLabel(rawNote: string, eventName?: string | null) {
       line &&
       !/^Update type:/i.test(line) &&
       !/^Status:/i.test(line) &&
+      !/^Relationship goal:/i.test(line) &&
+      !/^Relationship status:/i.test(line) &&
       !/^Next step:/i.test(line) &&
       !/^Follow up date:/i.test(line)
     );
@@ -84,6 +119,10 @@ function toTimelineLabel(rawNote: string, eventName?: string | null) {
 
   if (updateTypeMatch?.[1]) {
     return `${updateTypeMatch[1].trim()}: ${updateNote || "Update logged"}`.slice(0, 120);
+  }
+
+  if (relationshipStatusMatch?.[1]) {
+    return `Status updated: ${relationshipStatusMatch[1].trim()}`.slice(0, 120);
   }
 
   if (/^Reminder set\.?$/i.test(firstLine) || followUpDate) {
@@ -124,14 +163,20 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
   const [isMenuOpen, setMenuOpen] = useState(false);
   const [isDraftOpen, setDraftOpen] = useState(false);
   const [isReminderOpen, setReminderOpen] = useState(false);
+  const [isStatusOpen, setStatusOpen] = useState(false);
   const [isTimelineOpen, setTimelineOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
   const [selectedMethod, setSelectedMethod] = useState<ContactMethod | null>(null);
   const [customReminderDate, setCustomReminderDate] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [statusNextAction, setStatusNextAction] = useState("");
+  const [statusFollowUpDate, setStatusFollowUpDate] = useState("");
   const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [isTimelineLoading, setTimelineLoading] = useState(false);
 
   const contactMethods = useMemo(() => getContactMethods(person), [person]);
+  const primaryGoal = useMemo(() => getPrimaryGoal(person), [person]);
+  const statusOptions = useMemo(() => getStatusOptionsForGoal(primaryGoal), [primaryGoal]);
   const groupedTimeline = useMemo(() => groupTimeline(timelineItems), [timelineItems]);
 
   useEffect(() => {
@@ -152,8 +197,12 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
         setDraftText(savedState.draftText);
         setSelectedMethod(savedState.selectedMethod);
         setCustomReminderDate(savedState.customReminderDate);
+        setSelectedStatus(savedState.selectedStatus || "");
+        setStatusNextAction(savedState.statusNextAction || "");
+        setStatusFollowUpDate(savedState.statusFollowUpDate || "");
         setDraftOpen(savedState.modal === "draft");
         setReminderOpen(savedState.modal === "reminder");
+        setStatusOpen(savedState.modal === "status");
       } catch {
         await AsyncStorage.removeItem(QUICK_ACTION_STATE_STORAGE_KEY);
       }
@@ -168,22 +217,25 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
 
   useEffect(() => {
     async function persistQuickActionState() {
-      if (!isDraftOpen && !isReminderOpen) {
+      if (!isDraftOpen && !isReminderOpen && !isStatusOpen) {
         return;
       }
 
       const payload: SavedQuickActionState = {
         personId: person.id,
-        modal: isDraftOpen ? "draft" : "reminder",
+        modal: isDraftOpen ? "draft" : isReminderOpen ? "reminder" : "status",
         draftText,
         selectedMethod,
         customReminderDate,
+        selectedStatus,
+        statusNextAction,
+        statusFollowUpDate,
       };
       await AsyncStorage.setItem(QUICK_ACTION_STATE_STORAGE_KEY, JSON.stringify(payload));
     }
 
     void persistQuickActionState();
-  }, [customReminderDate, draftText, isDraftOpen, isReminderOpen, person.id, selectedMethod]);
+  }, [customReminderDate, draftText, isDraftOpen, isReminderOpen, isStatusOpen, person.id, selectedMethod, selectedStatus, statusFollowUpDate, statusNextAction]);
 
   async function clearQuickActionState() {
     await AsyncStorage.removeItem(QUICK_ACTION_STATE_STORAGE_KEY);
@@ -201,6 +253,11 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
   function closeReminder() {
     void clearQuickActionState();
     setReminderOpen(false);
+  }
+
+  function closeStatus() {
+    void clearQuickActionState();
+    setStatusOpen(false);
   }
 
   async function refreshParent() {
@@ -292,6 +349,56 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
     setReminderOpen(true);
   }
 
+  function openStatus() {
+    setSelectedStatus(person.relationshipStatus || statusOptions[0] || "Needs follow-up");
+    setStatusNextAction(person.nextStep || "");
+    setStatusFollowUpDate(person.nextFollowUpAt || getPresetDate("tomorrow"));
+    closeMenu();
+    setStatusOpen(true);
+  }
+
+  async function saveStatus() {
+    const status = selectedStatus.trim();
+    const nextAction = statusNextAction.trim();
+    const followUpDate = statusFollowUpDate.trim();
+
+    if (!status) {
+      Alert.alert("Choose a status", "Pick where this relationship is now.");
+      return;
+    }
+
+    if (followUpDate && !parseDateOnlyString(followUpDate)) {
+      Alert.alert("Invalid date", "Use YYYY-MM-DD for the follow-up date.");
+      return;
+    }
+
+    try {
+      const userId = await ensureSessionUserId();
+      await createInteraction({
+        userId,
+        personId: person.id,
+        rawNote: [
+          `Relationship goal: ${primaryGoal}`,
+          `Relationship status: ${status}`,
+          nextAction ? `Next step: ${nextAction}` : null,
+          followUpDate ? `Follow up date: ${followUpDate}` : null,
+        ].filter(Boolean).join("\n"),
+      });
+      setStatusOpen(false);
+      await clearQuickActionState();
+      await refreshParent();
+      void captureAnalyticsEvent("relationship_status_updated", {
+        goal: primaryGoal,
+        status,
+        has_next_action: Boolean(nextAction),
+        has_follow_up_date: Boolean(followUpDate),
+      });
+      Alert.alert("Status updated", `${person.name} is now at ${status}.`);
+    } catch (error) {
+      Alert.alert("Status failed", error instanceof Error ? error.message : "Could not update this status.");
+    }
+  }
+
   async function setReminder(date: string) {
     if (!parseDateOnlyString(date)) {
       Alert.alert("Invalid date", "Use YYYY-MM-DD for a custom reminder.");
@@ -364,9 +471,79 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
             <Typography variant="h2">{person.name}</Typography>
             <Button label="Mark contacted" onPress={() => void handleMarkContacted()} />
             <Button label="Draft follow-up" onPress={openDraft} variant="ghost" disabled={!contactMethods.length} />
+            <Button label="Update status" onPress={openStatus} variant="ghost" />
             <Button label="Remind me" onPress={openReminder} variant="ghost" />
             <Button label="Timeline" onPress={() => void openTimeline()} variant="ghost" />
             <Button label="Close" onPress={closeMenu} variant="ghost" />
+          </Card>
+        </View>
+      </Modal>
+
+      <Modal visible={isStatusOpen} transparent animationType="fade" onRequestClose={closeStatus}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeStatus} />
+          <Card style={styles.modalCard}>
+            <Typography variant="caption">Relationship status</Typography>
+            <Typography variant="h2">{person.name}</Typography>
+            <Typography variant="body" style={styles.helperText}>Goal: {primaryGoal}</Typography>
+            <View style={styles.methodRow}>
+              {statusOptions.map((status) => (
+                <Button
+                  key={status}
+                  label={status}
+                  onPress={() => setSelectedStatus(status)}
+                  variant={selectedStatus === status ? "primary" : "ghost"}
+                  fullWidth={false}
+                  size="compact"
+                />
+              ))}
+            </View>
+            <Typography variant="caption">Next action</Typography>
+            <TextInput
+              value={statusNextAction}
+              onChangeText={setStatusNextAction}
+              multiline
+              style={styles.textAreaCompact}
+              placeholder="Ask for CV, book intro call, send proposal..."
+              placeholderTextColor={colors.textTertiary}
+            />
+            <Typography variant="caption">Follow-up</Typography>
+            <View style={styles.methodRow}>
+              <Button
+                label="Tomorrow morning, 10:00"
+                onPress={() => setStatusFollowUpDate(getPresetDate("tomorrow"))}
+                variant={statusFollowUpDate === getPresetDate("tomorrow") ? "primary" : "ghost"}
+                fullWidth={false}
+                size="compact"
+              />
+              <Button
+                label="In 3 days"
+                onPress={() => setStatusFollowUpDate(getPresetDate("in3days"))}
+                variant={statusFollowUpDate === getPresetDate("in3days") ? "primary" : "ghost"}
+                fullWidth={false}
+                size="compact"
+              />
+              <Button
+                label="Next week"
+                onPress={() => setStatusFollowUpDate(getPresetDate("nextWeek"))}
+                variant={statusFollowUpDate === getPresetDate("nextWeek") ? "primary" : "ghost"}
+                fullWidth={false}
+                size="compact"
+              />
+            </View>
+            <TextInput
+              value={statusFollowUpDate}
+              onChangeText={setStatusFollowUpDate}
+              style={styles.input}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.actionRow}>
+              <Button label="Cancel" onPress={closeStatus} variant="ghost" fullWidth={false} size="compact" />
+              <Button label="Save status" onPress={() => void saveStatus()} fullWidth={false} size="compact" />
+            </View>
           </Card>
         </View>
       </Modal>
@@ -507,6 +684,9 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     justifyContent: "flex-end",
     gap: 8,
   },
+  helperText: {
+    color: colors.textSecondary,
+  },
   input: {
     minHeight: 48,
     borderRadius: 16,
@@ -519,6 +699,19 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   textArea: {
     minHeight: 120,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    color: colors.textPrimary,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    textAlignVertical: "top",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  textAreaCompact: {
+    minHeight: 88,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,

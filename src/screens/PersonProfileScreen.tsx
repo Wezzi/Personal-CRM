@@ -1653,6 +1653,9 @@ export function PersonProfileScreen({
               {selectedPerson.company ? (
                 <Typography variant="caption">{selectedPerson.company}</Typography>
               ) : null}
+              {selectedPerson.relationshipStatus ? (
+                <Typography variant="caption">Status: {selectedPerson.relationshipStatus}</Typography>
+              ) : null}
               {renderPreferredChannelPill(selectedPerson)}
               {selectedPerson.tags.length ? (
                 <View style={styles.tagPillRow}>
@@ -1730,6 +1733,9 @@ export function PersonProfileScreen({
                           {person.company || "No company"}
                         </Typography>
                         {renderPreferredChannelPill(person, true)}
+                        {person.relationshipStatus ? (
+                          <Typography variant="caption">Status: {person.relationshipStatus}</Typography>
+                        ) : null}
                       </View>
                       <View style={styles.compactActions}>
                         {renderCompactPrimaryContactAction(person)}
@@ -1758,6 +1764,7 @@ export function PersonProfileScreen({
                           <Typography variant="caption">{getMomentLabel(person.interactionCount)}</Typography>
                         </View>
                         {renderPreferredChannelPill(person)}
+                        {person.relationshipStatus ? <Typography variant="caption">Status: {person.relationshipStatus}</Typography> : null}
                         {person.tags.length ? <Typography variant="caption">Tags: {person.tags.join(", ")}</Typography> : null}
                         {renderContactActionButtons(person, true)}
                         <View style={styles.secondaryActionRow}>
@@ -1786,6 +1793,7 @@ export function PersonProfileScreen({
                           {[person.company, person.lastEventName || "No event yet"].filter(Boolean).join(" · ")}
                         </Typography>
                         {renderPreferredChannelPill(person)}
+                        {person.relationshipStatus ? <Typography variant="caption">Status: {person.relationshipStatus}</Typography> : null}
                         {person.tags.length ? <Typography variant="caption">Tags: {person.tags.join(", ")}</Typography> : null}
                       </View>
                       <View style={styles.cardActionRow}>
@@ -2113,6 +2121,13 @@ export function PersonProfileScreen({
                     <Typography variant="caption">Next step</Typography>
                     <Typography variant="body" style={styles.confirmPreview}>{followUpPerson.nextStep || "No next step yet"}</Typography>
                   </View>
+
+                  {followUpPerson.relationshipStatus ? (
+                    <View style={styles.followUpInfoBlock}>
+                      <Typography variant="caption">Status</Typography>
+                      <Typography variant="body" style={styles.confirmPreview}>{followUpPerson.relationshipStatus}</Typography>
+                    </View>
+                  ) : null}
 
                   <View style={styles.followUpInfoBlock}>
                     <Typography variant="caption">Suggested message</Typography>
