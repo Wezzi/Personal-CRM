@@ -68,6 +68,7 @@ export type PersonInsight = {
   lastInteractionNote: string;
   whatMatters: string;
   nextStep: string;
+  relationshipStatus: string;
   nextFollowUpAt: string | null;
   nextFollowUpLabel: string;
   followUpState: "none" | "upcoming" | "dueToday" | "overdue";
@@ -715,6 +716,7 @@ export async function listPeopleInsights(userId: string) {
     const rawNote = lastInteraction?.raw_note || "";
     const whatMatters = extractPrimaryNote(rawNote) || "No interactions yet.";
     const nextStep = extractNextStep(rawNote);
+    const relationshipStatus = extractRelationshipStatus(rawNote);
     const nextFollowUpAt = extractFollowUpDate(rawNote);
 
     return {
@@ -735,6 +737,7 @@ export async function listPeopleInsights(userId: string) {
       lastInteractionNote: whatMatters,
       whatMatters,
       nextStep,
+      relationshipStatus,
       nextFollowUpAt,
       nextFollowUpLabel: nextFollowUpAt ? formatFollowUpDate(nextFollowUpAt) : "No follow-up date",
       followUpState: getFollowUpState(nextFollowUpAt),
@@ -883,6 +886,8 @@ function stripInteractionMetadata(rawNote: string) {
     .replace(/^Company:\s*.+$/gim, "")
     .replace(/^Update\s*type:\s*.+$/gim, "")
     .replace(/^Status:\s*.+$/gim, "")
+    .replace(/^Relationship\s*goal:\s*.+$/gim, "")
+    .replace(/^Relationship\s*status:\s*.+$/gim, "")
     .replace(/^Next\s*step:\s*.+$/gim, "")
     .replace(/^Follow\s*up\s*date:\s*.+$/gim, "")
     .replace(/^Follow\s*up:\s*.+$/gim, "")
@@ -905,6 +910,11 @@ export function extractNextStep(rawNote: string) {
   }
 
   return "";
+}
+
+export function extractRelationshipStatus(rawNote: string) {
+  const explicitMatch = rawNote.match(/^Relationship\s*status:\s*(.+)$/im);
+  return explicitMatch?.[1]?.trim() || "";
 }
 
 export function extractFollowUp(rawNote: string) {

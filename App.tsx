@@ -18,6 +18,7 @@ import {
   resetAnalyticsUser,
 } from "./src/lib/analytics";
 import { supabaseConfigMessage } from "./src/lib/supabase";
+import { getEmailDigestEnabled, setEmailDigestEnabled } from "./src/lib/reminders";
 import { Button } from "./src/components/ui/Button";
 import { AuthScreen } from "./src/screens/AuthScreen";
 import { EventScreen } from "./src/screens/EventScreen";
@@ -175,6 +176,8 @@ function AppShell() {
   const [isAccountMenuOpen, setAccountMenuOpen] = useState(false);
   const [isNavMenuOpen, setNavMenuOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [isEmailDigestEnabled, setEmailDigestEnabledState] = useState(false);
+  const [isEmailDigestSaving, setEmailDigestSaving] = useState(false);
   const [screen, setScreen] = useState<ScreenKey>("home");
   const [hasHydratedActiveScreen, setHasHydratedActiveScreen] = useState(false);
   const [personStatusMode, setPersonStatusMode] = useState<PersonStatusMode>("all");
@@ -221,6 +224,36 @@ useEffect(() => {
     auth_provider: activeUser.app_metadata?.provider,
   });
 }, [activeUser, currentUsername]);
+
+useEffect(() => {
+  let isMounted = true;
+
+  async function hydrateReminderPreferences() {
+    if (!activeUser) {
+      if (isMounted) {
+        setEmailDigestEnabledState(false);
+      }
+      return;
+    }
+
+    try {
+      const enabled = await getEmailDigestEnabled(activeUser.id);
+      if (isMounted) {
+        setEmailDigestEnabledState(enabled);
+      }
+    } catch {
+      if (isMounted) {
+        setEmailDigestEnabledState(false);
+      }
+    }
+  }
+
+  void hydrateReminderPreferences();
+
+  return () => {
+    isMounted = false;
+  };
+}, [activeUser]);
 
 useEffect(() => {
   void captureAnalyticsEvent("screen_viewed", { screen });
@@ -571,6 +604,26 @@ useEffect(() => {
     void setPreference(nextPreference);
   }
 
+  async function handleEmailDigestToggle() {
+    if (!activeUser || isEmailDigestSaving) {
+      return;
+    }
+
+    const nextValue = !isEmailDigestEnabled;
+    try {
+      setEmailDigestSaving(true);
+      await setEmailDigestEnabled(activeUser.id, nextValue);
+      setEmailDigestEnabledState(nextValue);
+      void captureAnalyticsEvent("email_digest_preference_changed", {
+        enabled: nextValue,
+      });
+    } catch (error) {
+      Alert.alert("Reminder setting failed", error instanceof Error ? error.message : "Could not update email reminders.");
+    } finally {
+      setEmailDigestSaving(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {isCompactLayout ? (
@@ -853,6 +906,18 @@ useEffect(() => {
                 <Typography variant="body" style={styles.themeMeta}>
                   Current theme: {resolvedScheme}
                 </Typography>
+              </View>
+              <View style={styles.themeSection}>
+                <Typography variant="caption">Reminders</Typography>
+                <Typography variant="body" style={styles.themeMeta}>
+                  Get one morning email when people are due or overdue.
+                </Typography>
+                <Button
+                  label={isEmailDigestSaving ? "Saving..." : isEmailDigestEnabled ? "Email digest on" : "Email digest off"}
+                  onPress={() => void handleEmailDigestToggle()}
+                  variant={isEmailDigestEnabled ? "primary" : "ghost"}
+                  disabled={isEmailDigestSaving}
+                />
               </View>
               <Button label="Report a bug" onPress={handleReportBug} />
               <Button label="Suggest a feature" onPress={handleSuggestFeature} variant="ghost" />

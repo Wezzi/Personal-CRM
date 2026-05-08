@@ -256,6 +256,11 @@ export function HomeScreen({
         <Typography variant="body" style={styles.cardBody} numberOfLines={2}>
           {person.nextStep || person.whatMatters || person.lastInteractionNote}
         </Typography>
+        {person.relationshipStatus ? (
+          <Typography variant="caption">
+            Status: {person.relationshipStatus}
+          </Typography>
+        ) : null}
         <Typography variant="caption">{person.bannerLabel}</Typography>
       </Card>
     );
