@@ -23,7 +23,7 @@ import {
 import { captureAnalyticsEvent } from "../lib/analytics";
 import { radius, useTheme, useThemedStyles } from "../theme/tokens";
 
-type ContactMethod = "whatsapp" | "email" | "linkedin" | "phone";
+type ContactMethod = "whatsapp" | "sms" | "email" | "linkedin";
 
 type TimelineItem = {
   id: string;
@@ -34,6 +34,7 @@ type TimelineItem = {
 type PersonQuickActionsButtonProps = {
   person: PersonInsight;
   onChanged?: () => void | Promise<void>;
+  onEdit?: () => void;
 };
 
 type SavedQuickActionState = {
@@ -60,10 +61,10 @@ function buildMessageForPerson(person: PersonInsight) {
 
 function getContactMethods(person: PersonInsight) {
   return [
-    person.phoneNumber ? { method: "whatsapp" as const, label: "WhatsApp Draft" } : null,
+    person.phoneNumber ? { method: "whatsapp" as const, label: "WhatsApp message" } : null,
+    person.phoneNumber ? { method: "sms" as const, label: "Text message" } : null,
     person.email ? { method: "email" as const, label: "Email Draft" } : null,
     person.linkedinUrl ? { method: "linkedin" as const, label: "LinkedIn Draft" } : null,
-    person.phoneNumber ? { method: "phone" as const, label: "Call" } : null,
   ].filter(Boolean) as Array<{ method: ContactMethod; label: string }>;
 }
 
@@ -157,7 +158,7 @@ function groupTimeline(items: TimelineItem[]) {
   }));
 }
 
-export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActionsButtonProps) {
+export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQuickActionsButtonProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const [isMenuOpen, setMenuOpen] = useState(false);
@@ -288,7 +289,7 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
 
   async function logDraft(method: ContactMethod) {
     const userId = await ensureSessionUserId();
-    const label = method === "whatsapp" ? "WhatsApp" : method === "email" ? "Email" : method === "linkedin" ? "LinkedIn" : "Phone";
+    const label = method === "whatsapp" ? "WhatsApp" : method === "sms" ? "Text message" : method === "email" ? "Email" : "LinkedIn";
     await createInteraction({
       userId,
       personId: person.id,
@@ -314,11 +315,22 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
 
       if (selectedMethod === "whatsapp") {
         if (!person.phoneNumber) throw new Error("No WhatsApp number is saved for this person.");
+        await Clipboard.setStringAsync(message);
         const digits = person.phoneNumber.replace(/[^\d+]/g, "").replace(/^00/, "+");
         const normalizedPhone = digits.startsWith("+") ? digits.slice(1) : digits;
         const url = Platform.OS === "web"
           ? `https://wa.me/${normalizedPhone}?text=${encodedMessage}`
           : `whatsapp://send?phone=${normalizedPhone}&text=${encodedMessage}`;
+        Alert.alert("Draft ready", "Your WhatsApp message has been copied and opened.");
+        await Linking.openURL(url);
+      }
+
+      if (selectedMethod === "sms") {
+        if (!person.phoneNumber) throw new Error("No phone number is saved for this person.");
+        await Clipboard.setStringAsync(message);
+        const separator = Platform.OS === "ios" ? "&" : "?";
+        const url = `sms:${encodeURIComponent(person.phoneNumber)}${separator}body=${encodedMessage}`;
+        Alert.alert("Draft ready", "Your text message has been copied and opened.");
         await Linking.openURL(url);
       }
 
@@ -327,11 +339,6 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
         await Clipboard.setStringAsync(message);
         Alert.alert("Message copied", "Your LinkedIn draft is copied to clipboard and ready to paste.");
         await Linking.openURL(person.linkedinUrl);
-      }
-
-      if (selectedMethod === "phone") {
-        if (!person.phoneNumber) throw new Error("No phone number is saved for this person.");
-        await Linking.openURL(`tel:${person.phoneNumber}`);
       }
 
       await logDraft(selectedMethod);
@@ -344,7 +351,7 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
   }
 
   function openReminder() {
-    setCustomReminderDate("");
+    setCustomReminderDate(person.nextFollowUpAt || getPresetDate("tomorrow"));
     closeMenu();
     setReminderOpen(true);
   }
@@ -469,10 +476,11 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
           <Card style={styles.menuCard}>
             <Typography variant="caption">Quick actions</Typography>
             <Typography variant="h2">{person.name}</Typography>
-            <Button label="Mark contacted" onPress={() => void handleMarkContacted()} />
+            <Button label="Mark contacted" onPress={() => void handleMarkContacted()} variant="ghost" />
             <Button label="Draft follow-up" onPress={openDraft} variant="ghost" disabled={!contactMethods.length} />
             <Button label="Update status" onPress={openStatus} variant="ghost" />
-            <Button label="Remind me" onPress={openReminder} variant="ghost" />
+            <Button label="Set follow-up date" onPress={openReminder} variant="ghost" />
+            {onEdit ? <Button label="Edit contact" onPress={onEdit} variant="ghost" /> : null}
             <Button label="Timeline" onPress={() => void openTimeline()} variant="ghost" />
             <Button label="Close" onPress={closeMenu} variant="ghost" />
           </Card>
@@ -510,7 +518,7 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
             <Typography variant="caption">Follow-up</Typography>
             <View style={styles.methodRow}>
               <Button
-                label="Tomorrow morning, 10:00"
+                label="Tomorrow"
                 onPress={() => setStatusFollowUpDate(getPresetDate("tomorrow"))}
                 variant={statusFollowUpDate === getPresetDate("tomorrow") ? "primary" : "ghost"}
                 fullWidth={false}
@@ -585,11 +593,29 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeReminder} />
           <Card style={styles.modalCard}>
-            <Typography variant="h2">Set reminder</Typography>
+            <Typography variant="h2">Set follow-up date</Typography>
             <View style={styles.methodRow}>
-              <Button label="Tomorrow" onPress={() => void setReminder(getPresetDate("tomorrow"))} fullWidth={false} size="compact" />
-              <Button label="In 3 days" onPress={() => void setReminder(getPresetDate("in3days"))} variant="ghost" fullWidth={false} size="compact" />
-              <Button label="Next week" onPress={() => void setReminder(getPresetDate("nextWeek"))} variant="ghost" fullWidth={false} size="compact" />
+              <Button
+                label="Tomorrow"
+                onPress={() => setCustomReminderDate(getPresetDate("tomorrow"))}
+                variant={customReminderDate === getPresetDate("tomorrow") ? "primary" : "ghost"}
+                fullWidth={false}
+                size="compact"
+              />
+              <Button
+                label="In 3 days"
+                onPress={() => setCustomReminderDate(getPresetDate("in3days"))}
+                variant={customReminderDate === getPresetDate("in3days") ? "primary" : "ghost"}
+                fullWidth={false}
+                size="compact"
+              />
+              <Button
+                label="Next week"
+                onPress={() => setCustomReminderDate(getPresetDate("nextWeek"))}
+                variant={customReminderDate === getPresetDate("nextWeek") ? "primary" : "ghost"}
+                fullWidth={false}
+                size="compact"
+              />
             </View>
             <TextInput
               value={customReminderDate}
@@ -602,7 +628,7 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
             />
             <View style={styles.actionRow}>
               <Button label="Cancel" onPress={closeReminder} variant="ghost" fullWidth={false} size="compact" />
-              <Button label="Set custom" onPress={() => void setReminder(customReminderDate.trim())} fullWidth={false} size="compact" />
+              <Button label="Save follow-up date" onPress={() => void setReminder(customReminderDate.trim())} fullWidth={false} size="compact" />
             </View>
           </Card>
         </View>
@@ -625,10 +651,14 @@ export function PersonQuickActionsButton({ person, onChanged }: PersonQuickActio
                 <View key={group.dateLabel} style={styles.timelineGroup}>
                   <Typography variant="caption">{group.dateLabel}</Typography>
                   {group.items.map((item) => (
-                    <View key={item.id} style={styles.timelineItem}>
+                    <Pressable
+                      key={item.id}
+                      style={styles.timelineItem}
+                      onPress={() => Alert.alert("Timeline detail", `${item.label}\n\n${formatDateTime(item.createdAt)}`)}
+                    >
                       <Typography variant="body" numberOfLines={1} style={styles.timelineItemText}>{item.label}</Typography>
                       <Typography variant="caption">{formatDateTime(item.createdAt)}</Typography>
-                    </View>
+                    </Pressable>
                   ))}
                 </View>
               ))}

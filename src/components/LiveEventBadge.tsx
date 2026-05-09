@@ -92,7 +92,7 @@ export function LiveEventBadge({ label, eventDate }: LiveEventBadgeProps) {
   });
 
   return (
-    <View style={[styles.badge, !isLive ? styles.badgeMuted : null]}>
+    <View style={[styles.badge, timing === "past" ? styles.badgePast : null, timing === "upcoming" ? styles.badgeUpcoming : null]}>
       {isLive ? (
         <Animated.View
           style={[
@@ -104,9 +104,9 @@ export function LiveEventBadge({ label, eventDate }: LiveEventBadgeProps) {
           ]}
         />
       ) : (
-        <View style={styles.dotMuted} />
+        <View style={[styles.dotMuted, timing === "upcoming" ? styles.dotUpcoming : null]} />
       )}
-      <Typography variant="caption" style={[styles.text, !isLive ? styles.textMuted : null]}>
+      <Typography variant="caption" style={[styles.text, timing === "past" ? styles.textPast : null, timing === "upcoming" ? styles.textUpcoming : null]}>
         {badgeLabel}
       </Typography>
     </View>
@@ -126,8 +126,11 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     borderWidth: 1,
     borderColor: colors.border,
   },
-  badgeMuted: {
+  badgePast: {
     backgroundColor: colors.surfaceMuted,
+  },
+  badgeUpcoming: {
+    backgroundColor: "#DBEAFE",
   },
   dot: {
     width: 9,
@@ -141,10 +144,16 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     borderRadius: 999,
     backgroundColor: colors.textTertiary,
   },
+  dotUpcoming: {
+    backgroundColor: "#2563EB",
+  },
   text: {
     color: "#17843A",
   },
-  textMuted: {
+  textPast: {
     color: colors.textSecondary,
+  },
+  textUpcoming: {
+    color: "#1D4ED8",
   },
 });

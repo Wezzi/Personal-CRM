@@ -557,6 +557,26 @@ useEffect(() => {
     setEventWrapUpOpen(false);
   }
 
+  function confirmExitCurrentEventMode() {
+    if (!currentEvent) {
+      exitCurrentEventMode();
+      return;
+    }
+
+    Alert.alert(
+      "Exit event mode?",
+      `New contacts will no longer be tagged to ${currentEvent.name}. You can set this event again from Events.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Exit event mode",
+          style: "destructive",
+          onPress: exitCurrentEventMode,
+        },
+      ]
+    );
+  }
+
   async function finishTutorial() {
     setTutorialStep(null);
     await AsyncStorage.setItem(TUTORIAL_STORAGE_KEY, "true");
@@ -635,6 +655,16 @@ useEffect(() => {
               <Typography variant="h2">{screen === "home" ? "Home" : screen === "event" ? "Events" : "People"}</Typography>
             </View>
             <View style={styles.compactTopActions}>
+              {screen !== "home" ? (
+                <Button
+                  label="Home"
+                  onPress={() => setScreen("home")}
+                  variant="ghost"
+                  fullWidth={false}
+                  size="compact"
+                  style={styles.compactHeaderButton}
+                />
+              ) : null}
               <Button
                 label={currentEvent ? (isVeryCompactLayout ? "Event" : "Current event") : "Set event"}
                 onPress={openCurrentEventSheet}
@@ -730,8 +760,8 @@ useEffect(() => {
             size="compact"
           />
           <Button
-            label="End event mode"
-            onPress={exitCurrentEventMode}
+            label="Exit event mode"
+            onPress={confirmExitCurrentEventMode}
             variant="ghost"
             fullWidth={false}
             size="compact"
@@ -752,7 +782,7 @@ useEffect(() => {
           <EventScreen
             currentEvent={currentEvent}
             onSetCurrentEvent={setCurrentEvent}
-            onEndCurrentEvent={exitCurrentEventMode}
+            onEndCurrentEvent={confirmExitCurrentEventMode}
           />
         ) : null}
         {screen === "person" ? (

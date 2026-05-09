@@ -183,10 +183,26 @@ export function PersonProfileScreen({
       (person) => selectedTag === "all" || person.tags.includes(selectedTag)
     );
 
+    const statusFiltered = tagFiltered.filter((person) => {
+      if (statusMode === "today") {
+        return (person.daysSinceLastContact || 0) <= JUST_CONNECTED_THRESHOLD;
+      }
+
+      if (statusMode === "recent") {
+        return (person.daysSinceLastContact || 0) <= RECENT_CONTACT_THRESHOLD;
+      }
+
+      if (statusMode === "stale") {
+        return isContactStale(person.daysSinceLastContact, person.priority);
+      }
+
+      return true;
+    });
+
     const query = searchQuery.trim().toLowerCase();
     const searchedPeople = !query
-      ? tagFiltered
-      : tagFiltered.filter((person) =>
+      ? statusFiltered
+      : statusFiltered.filter((person) =>
           [person.name, person.company, person.lastInteractionNote, person.followUp, person.lastEventName || "", person.tags.join(" ")]
             .join(" ")
             .toLowerCase()
@@ -210,7 +226,7 @@ export function PersonProfileScreen({
       const rightValue = right.lastInteractionAt || right.createdAt;
       return rightValue.localeCompare(leftValue);
     });
-  }, [categoryMode, people, searchQuery, selectedTag, sortMode]);
+  }, [categoryMode, people, searchQuery, selectedTag, sortMode, statusMode]);
 
   const visiblePeople = useMemo(() => {
     if (peopleView === "needsFollowUp") {
@@ -392,7 +408,10 @@ export function PersonProfileScreen({
     }
 
     setStatusMode(forcedStatusMode);
-    if (forcedStatusMode === "today" || forcedStatusMode === "stale") {
+    if (forcedStatusMode === "today") {
+      setPeopleView("allContacts");
+    }
+    if (forcedStatusMode === "stale") {
       setPeopleView("needsFollowUp");
     }
     if (forcedStatusMode === "recent") {
@@ -1505,21 +1524,30 @@ export function PersonProfileScreen({
             <View style={styles.controlRow}>
               <Button
                 label={`Needs follow up ${attentionCounts.needsFollowUp}`}
-                onPress={() => setPeopleView("needsFollowUp")}
+                onPress={() => {
+                  setStatusMode("all");
+                  setPeopleView("needsFollowUp");
+                }}
                 variant={peopleView === "needsFollowUp" ? "primary" : "ghost"}
                 fullWidth={false}
                 size="compact"
               />
               <Button
                 label={`Recently met ${attentionCounts.recentlyMet}`}
-                onPress={() => setPeopleView("recentlyMet")}
+                onPress={() => {
+                  setStatusMode("all");
+                  setPeopleView("recentlyMet");
+                }}
                 variant={peopleView === "recentlyMet" ? "primary" : "ghost"}
                 fullWidth={false}
                 size="compact"
               />
               <Button
                 label={`All contacts ${attentionCounts.allContacts}`}
-                onPress={() => setPeopleView("allContacts")}
+                onPress={() => {
+                  setStatusMode("all");
+                  setPeopleView("allContacts");
+                }}
                 variant={peopleView === "allContacts" ? "primary" : "ghost"}
                 fullWidth={false}
                 size="compact"
@@ -1631,7 +1659,7 @@ export function PersonProfileScreen({
                   <Typography variant="caption">Selected contact</Typography>
                   <Typography variant="h1">{selectedPerson.name}</Typography>
                 </View>
-                <PersonQuickActionsButton person={selectedPerson} onChanged={loadProfileData} />
+                <PersonQuickActionsButton person={selectedPerson} onChanged={loadProfileData} onEdit={() => openEditPerson(selectedPerson)} />
               </View>
               <View style={styles.featureMetaRow}>
                 <Typography variant="body" style={styles.featureBody}>
@@ -1739,7 +1767,7 @@ export function PersonProfileScreen({
                       </View>
                       <View style={styles.compactActions}>
                         {renderCompactPrimaryContactAction(person)}
-                        <PersonQuickActionsButton person={person} onChanged={loadProfileData} />
+                        <PersonQuickActionsButton person={person} onChanged={loadProfileData} onEdit={() => openEditPerson(person)} />
                         <Pressable style={styles.expandButton} onPress={() => handleToggleExpandedPerson(person.id)}>
                           <Typography variant="body" style={styles.iconButtonText}>
                             {selectedPersonId === person.id ? "v" : ">"}
@@ -1820,7 +1848,7 @@ export function PersonProfileScreen({
                           fullWidth={false}
                           size="compact"
                         />
-                        <PersonQuickActionsButton person={person} onChanged={loadProfileData} />
+                        <PersonQuickActionsButton person={person} onChanged={loadProfileData} onEdit={() => openEditPerson(person)} />
                       </View>
                     </View>
                     <Typography variant="body" style={styles.noteText} numberOfLines={2}>
@@ -1863,7 +1891,7 @@ export function PersonProfileScreen({
           initialDraft={editorDraft}
           lockedEvent={editorMode === "edit" ? null : currentEvent}
           title={editorMode === "edit" ? "Edit Contact" : editorMode === "createPerson" ? "Add Person" : "Add Interaction"}
-          saveLabel={editorMode === "edit" ? "Save Changes" : editorMode === "createPerson" ? "Save & View Draft" : "Save Interaction"}
+          saveLabel={editorMode === "edit" ? "Save Changes" : editorMode === "createPerson" ? "Save & Close" : "Save Interaction"}
           showQuickCapture={editorMode === "createPerson"}
           showSaveAndAddAnother={editorMode !== "edit"}
           draftStorageKey={PEOPLE_CAPTURE_DRAFT_STORAGE_KEY}
@@ -1938,7 +1966,7 @@ export function PersonProfileScreen({
                   <Typography variant="caption">Due date</Typography>
                   <View style={styles.controlRow}>
                     <Button
-                      label="Tomorrow morning, 10:00"
+                      label="Tomorrow"
                       onPress={() => setUpdateDraft((current) => ({ ...current, dueDate: getPresetDate("tomorrow") }))}
                       variant={updateDraft.dueDate === getPresetDate("tomorrow") ? "primary" : "ghost"}
                       fullWidth={false}

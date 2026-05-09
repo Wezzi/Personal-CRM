@@ -154,7 +154,7 @@ function buildDraftSentence(draft: ParsedPersonDraft) {
 function getSuggestedPresetLabel(category: EventCategory | "" | null | undefined) {
   const preset = getSuggestedFollowUpPreset(category || null);
   if (preset === "tomorrow") {
-    return "Tomorrow morning, 10:00";
+    return "Tomorrow";
   }
   if (preset === "in3days") {
     return "In 3 days";
@@ -1061,7 +1061,7 @@ export function CaptureModal({
                 </Typography>
                 <View style={styles.chipRow}>
                   <Button
-                    label="Tomorrow morning, 10:00"
+                    label="Tomorrow"
                     onPress={() => handleFollowUpPresetSelect("tomorrow")}
                     variant={draft.followUpPreset === "tomorrow" ? "primary" : "ghost"}
                     fullWidth={false}
@@ -1108,8 +1108,8 @@ export function CaptureModal({
               </View>
             </Card>
 
-            <Card style={styles.sectionCard}>
-              <Typography variant="caption">Preview message</Typography>
+            <Card style={[styles.sectionCard, styles.previewCard]}>
+              <Typography variant="caption">Draft preview</Typography>
               <Typography variant="body" style={styles.previewText}>
                 {sentencePreview}
               </Typography>
@@ -1284,6 +1284,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   previewText: {
     color: colors.textSecondary,
+  },
+  previewCard: {
+    marginBottom: 8,
+    borderColor: colors.primaryAction,
   },
   footerWrap: {
     position: "absolute",
