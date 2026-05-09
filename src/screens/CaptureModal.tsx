@@ -99,6 +99,7 @@ const goalTagOptions = [
   "Interesting",
   "Other",
 ] as const;
+const goalTagSet = new Set<string>(goalTagOptions);
 
 export type LockedEventDraft = {
   name: string;
@@ -711,9 +712,12 @@ export function CaptureModal({
   function toggleTag(tag: string) {
     setDraft((current) => {
       const hasTag = current.tags.includes(tag);
+      const isGoalTag = goalTagSet.has(tag);
+      const baseTags = isGoalTag ? current.tags.filter((item) => !goalTagSet.has(item)) : current.tags;
+
       return {
         ...current,
-        tags: hasTag ? current.tags.filter((item) => item !== tag) : [...current.tags, tag],
+        tags: hasTag ? current.tags.filter((item) => item !== tag) : [...baseTags, tag],
       };
     });
   }

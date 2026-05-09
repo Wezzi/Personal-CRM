@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
 
 import { CurrentEventValue } from "../components/CurrentEventSheet";
 import { LiveEventBadge } from "../components/LiveEventBadge";
@@ -30,6 +31,7 @@ import {
   updateEventDetails,
 } from "../lib/crm";
 import { buildPeopleCsv, exportCsvFile, getPeopleForEventExport } from "../lib/csvExport";
+import { buildSlackCanvasSummary } from "../lib/slackCanvas";
 import { layout, useTheme, useThemedStyles } from "../theme/tokens";
 
 type SortMode = "recent" | "name" | "people" | "notes";
@@ -79,6 +81,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
   const [isSavingEvent, setSavingEvent] = useState(false);
   const [isDeletingEvent, setDeletingEvent] = useState(false);
   const [isExportingCsv, setExportingCsv] = useState(false);
+  const [isCopyingSlackCanvas, setCopyingSlackCanvas] = useState(false);
   const [deleteArmedEventId, setDeleteArmedEventId] = useState<string | null>(null);
   const [eventEditorMode, setEventEditorMode] = useState<"create" | "edit">("create");
   const [eventDraft, setEventDraft] = useState<EventEditorDraft>({ name: "", category: "", eventDate: getRelativeDateInputValue(0) });
@@ -557,6 +560,42 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
     }
   }
 
+  async function handleCopySlackCanvas(targetEvent = selectedEvent) {
+    if (!targetEvent || isCopyingSlackCanvas) {
+      return;
+    }
+
+    const exportPeople = getPeopleForEventExport({
+      people,
+      interactions,
+      eventId: targetEvent.id,
+      eventName: targetEvent.name,
+      eventCategory: targetEvent.category,
+      eventDate: targetEvent.eventDate,
+    });
+
+    if (!exportPeople.length) {
+      Alert.alert("Nothing to summarise yet", "Capture at least one person for this event first.");
+      return;
+    }
+
+    try {
+      setCopyingSlackCanvas(true);
+      await Clipboard.setStringAsync(
+        buildSlackCanvasSummary({
+          eventName: targetEvent.name,
+          eventDate: targetEvent.eventDate,
+          people: exportPeople,
+        })
+      );
+      Alert.alert("Slack Canvas summary copied", "Paste it into a Slack Canvas or channel when you are ready.");
+    } catch {
+      Alert.alert("Could not copy summary", "Try again in a moment.");
+    } finally {
+      setCopyingSlackCanvas(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -687,6 +726,14 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                   size="compact"
                 />
                 <Button label="Edit" onPress={() => openEditEvent()} variant="ghost" fullWidth={false} size="compact" />
+                <Button
+                  label="Copy Slack Canvas"
+                  onPress={() => void handleCopySlackCanvas(selectedEvent)}
+                  variant="ghost"
+                  fullWidth={false}
+                  size="compact"
+                  loading={isCopyingSlackCanvas}
+                />
                 {canExportCsv ? (
                   <Button
                     label="Export CSV"
@@ -751,6 +798,14 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                       <View style={styles.eventActions}>
                         <Button label="View" onPress={() => setSelectedEventId(event.id)} variant="ghost" fullWidth={false} size="compact" />
                         <Button label="Edit" onPress={() => openEditEvent(event)} variant="ghost" fullWidth={false} size="compact" />
+                        <Button
+                          label="Copy Slack Canvas"
+                          onPress={() => void handleCopySlackCanvas(event)}
+                          variant="ghost"
+                          fullWidth={false}
+                          size="compact"
+                          loading={isCopyingSlackCanvas}
+                        />
                         {canExportCsv ? (
                           <Button
                             label="Export CSV"
