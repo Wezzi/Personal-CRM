@@ -95,7 +95,11 @@ Deno.serve(async (req) => {
     return json({ error: "Missing markdown." }, 400);
   }
 
-  const response = await fetch("https://slack.com/api/canvases.create", {
+  if (!channelId) {
+    return json({ error: "Missing SLACK_CHANNEL_ID." }, 500);
+  }
+
+  const response = await fetch("https://slack.com/api/conversations.canvases.create", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${slackBotToken}`,
@@ -103,7 +107,7 @@ Deno.serve(async (req) => {
     },
     body: JSON.stringify({
       title,
-      ...(channelId ? { channel_id: channelId } : {}),
+      channel_id: channelId,
       document_content: {
         type: "markdown",
         markdown,
@@ -114,6 +118,17 @@ Deno.serve(async (req) => {
   const slackResult = await response.json().catch(() => null);
 
   if (!response.ok || !slackResult?.ok) {
+    if (
+      slackResult?.error === "channel_canvas_already_exists" ||
+      slackResult?.error === "free_team_canvas_tab_already_exists"
+    ) {
+      return json({
+        ok: true,
+        alreadyExists: true,
+        warning: slackResult.error,
+      });
+    }
+
     return json(
       {
         error: slackResult?.error || "slack_request_failed",

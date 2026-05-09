@@ -678,9 +678,19 @@ export function EventScreen({
     try {
       setExportingSlackCanvas(true);
       const result = await exportSlackCanvas(payload);
+      if (result.alreadyExists) {
+        Alert.alert(
+          "Slack channel already has a Canvas",
+          "Open the channel Canvas tab in Slack. Slack only allows one channel canvas per channel."
+        );
+        return;
+      }
+
       Alert.alert(
         "Slack Canvas created",
-        result.canvasId ? `Canvas ID: ${result.canvasId}` : "Your event summary was sent to Slack."
+        result.canvasId
+          ? `Open the Canvas tab in your Slack channel. Canvas ID: ${result.canvasId}`
+          : "Open the Canvas tab in your Slack channel."
       );
     } catch (error) {
       Alert.alert("Slack export failed", error instanceof Error ? error.message : "Could not create the Slack Canvas.");
