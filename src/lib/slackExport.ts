@@ -40,5 +40,5 @@ export async function exportSlackCanvas(input: { title: string; markdown: string
     throw new Error(error.message);
   }
 
-  return data as { ok: boolean; canvasId?: string; alreadyExists?: boolean; warning?: string };
+  return data as { ok: boolean; canvasId?: string; alreadyExists?: boolean; updated?: boolean; warning?: string };
 }

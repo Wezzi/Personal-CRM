@@ -681,7 +681,17 @@ export function EventScreen({
       if (result.alreadyExists) {
         Alert.alert(
           "Slack channel already has a Canvas",
-          "Open the channel Canvas tab in Slack. Slack only allows one channel canvas per channel."
+          "Slack says this channel already has a Canvas. Add channels:read to the bot scopes, reinstall it, then try again so Blackbook can update the existing Canvas."
+        );
+        return;
+      }
+
+      if (result.updated) {
+        Alert.alert(
+          "Slack Canvas updated",
+          result.canvasId
+            ? `Open the Canvas tab in your Slack channel. Canvas ID: ${result.canvasId}`
+            : "Open the Canvas tab in your Slack channel."
         );
         return;
       }
