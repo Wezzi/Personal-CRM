@@ -29,6 +29,7 @@ import {
   parseDateOnlyString,
   updateEventDetails,
 } from "../lib/crm";
+import { buildPeopleCsv, exportCsvFile, getPeopleForEventExport } from "../lib/csvExport";
 import { layout, useTheme, useThemedStyles } from "../theme/tokens";
 
 type SortMode = "recent" | "name" | "people" | "notes";
@@ -43,6 +44,7 @@ type EventScreenProps = {
   currentEvent: CurrentEventValue | null;
   onSetCurrentEvent?: (event: CurrentEventValue) => void;
   onEndCurrentEvent?: () => void;
+  canExportCsv?: boolean;
 };
 
 type SavedEventEditorState = {
@@ -68,7 +70,7 @@ function getRelativeDateInputValue(offsetDays: number) {
   return toDateInputValue(date);
 }
 
-export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent }: EventScreenProps) {
+export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent, canExportCsv = false }: EventScreenProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
@@ -76,6 +78,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
   const [isEventEditorOpen, setEventEditorOpen] = useState(false);
   const [isSavingEvent, setSavingEvent] = useState(false);
   const [isDeletingEvent, setDeletingEvent] = useState(false);
+  const [isExportingCsv, setExportingCsv] = useState(false);
   const [deleteArmedEventId, setDeleteArmedEventId] = useState<string | null>(null);
   const [eventEditorMode, setEventEditorMode] = useState<"create" | "edit">("create");
   const [eventDraft, setEventDraft] = useState<EventEditorDraft>({ name: "", category: "", eventDate: getRelativeDateInputValue(0) });
@@ -522,6 +525,38 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
     }
   }
 
+  async function handleExportCsv(targetEvent = selectedEvent) {
+    if (!targetEvent || isExportingCsv) {
+      return;
+    }
+
+    const exportPeople = getPeopleForEventExport({
+      people,
+      interactions,
+      eventId: targetEvent.id,
+      eventName: targetEvent.name,
+      eventCategory: targetEvent.category,
+      eventDate: targetEvent.eventDate,
+    });
+
+    if (!exportPeople.length) {
+      Alert.alert("Nothing to export yet", "Capture at least one person for this event first.");
+      return;
+    }
+
+    try {
+      setExportingCsv(true);
+      await exportCsvFile({
+        csv: buildPeopleCsv(exportPeople),
+        fileName: `${targetEvent.name} contacts`,
+      });
+    } catch (error) {
+      Alert.alert("CSV export failed", error instanceof Error ? error.message : "Could not export this event.");
+    } finally {
+      setExportingCsv(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -652,6 +687,16 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                   size="compact"
                 />
                 <Button label="Edit" onPress={() => openEditEvent()} variant="ghost" fullWidth={false} size="compact" />
+                {canExportCsv ? (
+                  <Button
+                    label="Export CSV"
+                    onPress={() => void handleExportCsv(selectedEvent)}
+                    variant="ghost"
+                    fullWidth={false}
+                    size="compact"
+                    loading={isExportingCsv}
+                  />
+                ) : null}
                 <Button
                   label={deleteArmedEventId === selectedEvent.id ? "Delete now" : "Delete"}
                   onPress={() => void handleDeleteEvent(selectedEvent)}
@@ -706,6 +751,16 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                       <View style={styles.eventActions}>
                         <Button label="View" onPress={() => setSelectedEventId(event.id)} variant="ghost" fullWidth={false} size="compact" />
                         <Button label="Edit" onPress={() => openEditEvent(event)} variant="ghost" fullWidth={false} size="compact" />
+                        {canExportCsv ? (
+                          <Button
+                            label="Export CSV"
+                            onPress={() => void handleExportCsv(event)}
+                            variant="ghost"
+                            fullWidth={false}
+                            size="compact"
+                            loading={isExportingCsv}
+                          />
+                        ) : null}
                         <Button
                           label={isCurrentEvent(event) ? "End event" : "Set current"}
                           onPress={() => handleCurrentEventToggle(event)}

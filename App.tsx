@@ -19,6 +19,7 @@ import {
 } from "./src/lib/analytics";
 import { supabaseConfigMessage } from "./src/lib/supabase";
 import { getEmailDigestEnabled, setEmailDigestEnabled } from "./src/lib/reminders";
+import { getFeatureAccess } from "./src/lib/access";
 import { Button } from "./src/components/ui/Button";
 import { AuthScreen } from "./src/screens/AuthScreen";
 import { EventScreen } from "./src/screens/EventScreen";
@@ -111,7 +112,9 @@ function hasMagicEventInUrl() {
   }
 
   const params = new URLSearchParams(window.location.search);
+  const hasEventPath = /^\/e\/[^/?#]+/.test(window.location.pathname);
   return Boolean(
+    hasEventPath ||
     params.get("event_source") ||
     params.get("event") ||
     params.get("event_slug") ||
@@ -187,6 +190,7 @@ function AppShell() {
   const [currentEvent, setCurrentEvent] = useState<CurrentEventValue | null>(null);
   const [tutorialStep, setTutorialStep] = useState<TutorialStep | null>(null);
   const welcomeName = getWelcomeName(activeUser, currentUsername);
+  const featureAccess = getFeatureAccess(activeUser);
 
   if (supabaseConfigMessage) {
     return (
@@ -783,6 +787,7 @@ useEffect(() => {
             currentEvent={currentEvent}
             onSetCurrentEvent={setCurrentEvent}
             onEndCurrentEvent={confirmExitCurrentEventMode}
+            canExportCsv={featureAccess.features.exportCsv}
           />
         ) : null}
         {screen === "person" ? (

@@ -30,6 +30,15 @@ function normalizeAttribution(raw: InviteAttribution): InviteAttribution {
   return cleanProperties(raw) as InviteAttribution;
 }
 
+function getEventSlugFromPath() {
+  if (Platform.OS !== "web" || typeof window === "undefined") {
+    return undefined;
+  }
+
+  const match = window.location.pathname.match(/^\/e\/([^/?#]+)/);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
 async function getPostHog() {
   if (Platform.OS !== "web" || !POSTHOG_KEY) {
     return null;
@@ -67,12 +76,14 @@ export async function captureInviteAttributionFromUrl() {
   }
 
   const params = new URLSearchParams(window.location.search);
+  const pathEventSlug = getEventSlugFromPath();
   const attribution = normalizeAttribution({
     eventSource:
       params.get("event_source") ||
       params.get("event") ||
       params.get("event_slug") ||
       params.get("source") ||
+      pathEventSlug ||
       undefined,
     eventName: params.get("event_name") || params.get("eventName") || params.get("name") || undefined,
     eventCategory: params.get("event_category") || params.get("eventCategory") || undefined,

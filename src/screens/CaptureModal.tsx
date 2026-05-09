@@ -761,7 +761,6 @@ export function CaptureModal({
       nextFollowUpAt,
     });
     setCustomFollowUpDate(customParts.date);
-    setCustomFollowUpTime(customParts.time);
     setPasteInput("");
     setActiveMethod(initialMethod);
     setFollowUpManuallySet(false);
