@@ -32,6 +32,7 @@ import {
 } from "../lib/crm";
 import { buildCampaignUrl } from "../lib/campaign";
 import { buildPeopleCsv, exportCsvFile, getPeopleForEventExport } from "../lib/csvExport";
+import { exportSlackCanvas } from "../lib/slackExport";
 import { buildSlackCanvasSummary } from "../lib/slackCanvas";
 import { layout, useTheme, useThemedStyles } from "../theme/tokens";
 
@@ -48,6 +49,8 @@ type EventScreenProps = {
   onSetCurrentEvent?: (event: CurrentEventValue) => void;
   onEndCurrentEvent?: () => void;
   canExportCsv?: boolean;
+  canManageCampaignLinks?: boolean;
+  canDirectSlackCanvas?: boolean;
 };
 
 type SavedEventEditorState = {
@@ -73,7 +76,14 @@ function getRelativeDateInputValue(offsetDays: number) {
   return toDateInputValue(date);
 }
 
-export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent, canExportCsv = false }: EventScreenProps) {
+export function EventScreen({
+  currentEvent,
+  onSetCurrentEvent,
+  onEndCurrentEvent,
+  canExportCsv = false,
+  canManageCampaignLinks = false,
+  canDirectSlackCanvas = false,
+}: EventScreenProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
@@ -82,6 +92,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
   const [isSavingEvent, setSavingEvent] = useState(false);
   const [isDeletingEvent, setDeletingEvent] = useState(false);
   const [isExportingCsv, setExportingCsv] = useState(false);
+  const [isExportingSlackCanvas, setExportingSlackCanvas] = useState(false);
   const [isCopyingCampaignLink, setCopyingCampaignLink] = useState(false);
   const [isCopyingSlackCanvas, setCopyingSlackCanvas] = useState(false);
   const [deleteArmedEventId, setDeleteArmedEventId] = useState<string | null>(null);
@@ -624,6 +635,60 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
     }
   }
 
+  function getSlackCanvasPayload(targetEvent: NonNullable<typeof selectedEvent>) {
+    const exportPeople = getPeopleForEventExport({
+      people,
+      interactions,
+      eventId: targetEvent.id,
+      eventName: targetEvent.name,
+      eventCategory: targetEvent.category,
+      eventDate: targetEvent.eventDate,
+    });
+
+    if (!exportPeople.length) {
+      return null;
+    }
+
+    return {
+      title: `${targetEvent.name} follow-up summary`,
+      markdown: buildSlackCanvasSummary({
+        eventName: targetEvent.name,
+        eventDate: targetEvent.eventDate,
+        campaignLink: buildCampaignUrl({
+          name: targetEvent.name,
+          category: targetEvent.category,
+          eventDate: targetEvent.eventDate,
+        }),
+        people: exportPeople,
+      }),
+    };
+  }
+
+  async function handleExportSlackCanvas(targetEvent = selectedEvent) {
+    if (!targetEvent || isExportingSlackCanvas) {
+      return;
+    }
+
+    const payload = getSlackCanvasPayload(targetEvent);
+    if (!payload) {
+      Alert.alert("Nothing to export yet", "Capture at least one person for this event first.");
+      return;
+    }
+
+    try {
+      setExportingSlackCanvas(true);
+      const result = await exportSlackCanvas(payload);
+      Alert.alert(
+        "Slack Canvas created",
+        result.canvasId ? `Canvas ID: ${result.canvasId}` : "Your event summary was sent to Slack."
+      );
+    } catch (error) {
+      Alert.alert("Slack export failed", error instanceof Error ? error.message : "Could not create the Slack Canvas.");
+    } finally {
+      setExportingSlackCanvas(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -653,7 +718,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
               <Typography variant="body" style={styles.secondaryText}>
                 {currentEventSummary.peopleCount} people added · {currentEventSummary.followUpsDue} follow-ups due
               </Typography>
-              {currentEvent.isCampaignMode && currentEvent.campaignSlug ? (
+              {canManageCampaignLinks && currentEvent.isCampaignMode && currentEvent.campaignSlug ? (
                 <Typography variant="caption" style={styles.secondaryText}>
                   Campaign mode · /e/{currentEvent.campaignSlug}
                 </Typography>
@@ -759,14 +824,16 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                   size="compact"
                 />
                 <Button label="Edit" onPress={() => openEditEvent()} variant="ghost" fullWidth={false} size="compact" />
-                <Button
-                  label="Copy campaign link"
-                  onPress={() => void handleCopyCampaignLink(selectedEvent)}
-                  variant="ghost"
-                  fullWidth={false}
-                  size="compact"
-                  loading={isCopyingCampaignLink}
-                />
+                {canManageCampaignLinks ? (
+                  <Button
+                    label="Copy campaign link"
+                    onPress={() => void handleCopyCampaignLink(selectedEvent)}
+                    variant="ghost"
+                    fullWidth={false}
+                    size="compact"
+                    loading={isCopyingCampaignLink}
+                  />
+                ) : null}
                 <Button
                   label="Copy Slack Canvas"
                   onPress={() => void handleCopySlackCanvas(selectedEvent)}
@@ -775,6 +842,16 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                   size="compact"
                   loading={isCopyingSlackCanvas}
                 />
+                {canDirectSlackCanvas ? (
+                  <Button
+                    label="Create Slack Canvas"
+                    onPress={() => void handleExportSlackCanvas(selectedEvent)}
+                    variant="ghost"
+                    fullWidth={false}
+                    size="compact"
+                    loading={isExportingSlackCanvas}
+                  />
+                ) : null}
                 {canExportCsv ? (
                   <Button
                     label="Export CSV"
@@ -839,14 +916,16 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                       <View style={styles.eventActions}>
                         <Button label="View" onPress={() => setSelectedEventId(event.id)} variant="ghost" fullWidth={false} size="compact" />
                         <Button label="Edit" onPress={() => openEditEvent(event)} variant="ghost" fullWidth={false} size="compact" />
-                        <Button
-                          label="Copy campaign link"
-                          onPress={() => void handleCopyCampaignLink(event)}
-                          variant="ghost"
-                          fullWidth={false}
-                          size="compact"
-                          loading={isCopyingCampaignLink}
-                        />
+                        {canManageCampaignLinks ? (
+                          <Button
+                            label="Copy campaign link"
+                            onPress={() => void handleCopyCampaignLink(event)}
+                            variant="ghost"
+                            fullWidth={false}
+                            size="compact"
+                            loading={isCopyingCampaignLink}
+                          />
+                        ) : null}
                         <Button
                           label="Copy Slack Canvas"
                           onPress={() => void handleCopySlackCanvas(event)}
@@ -855,6 +934,16 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                           size="compact"
                           loading={isCopyingSlackCanvas}
                         />
+                        {canDirectSlackCanvas ? (
+                          <Button
+                            label="Create Slack Canvas"
+                            onPress={() => void handleExportSlackCanvas(event)}
+                            variant="ghost"
+                            fullWidth={false}
+                            size="compact"
+                            loading={isExportingSlackCanvas}
+                          />
+                        ) : null}
                         {canExportCsv ? (
                           <Button
                             label="Export CSV"

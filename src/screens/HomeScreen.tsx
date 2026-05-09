@@ -336,11 +336,6 @@ export function HomeScreen({
                   ? `${currentEventSummary.total} people added · ${currentEventSummary.outstanding} still need follow-up. New captures will keep tagging to this event until you exit event mode.`
                   : "Any person saved now will be attached to this event until you exit event mode."}
               </Typography>
-              {currentEvent.isCampaignMode && currentEvent.campaignSlug ? (
-                <Typography variant="caption" style={styles.sectionMeta}>
-                  Campaign link: /e/{currentEvent.campaignSlug}
-                </Typography>
-              ) : null}
             </Card>
           ) : null}
 

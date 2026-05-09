@@ -825,6 +825,8 @@ useEffect(() => {
             onSetCurrentEvent={setCurrentEvent}
             onEndCurrentEvent={confirmExitCurrentEventMode}
             canExportCsv={featureAccess.features.exportCsv}
+            canManageCampaignLinks={featureAccess.accessMode === "admin"}
+            canDirectSlackCanvas={featureAccess.features.directSlackCanvas}
           />
         ) : null}
         {screen === "person" ? (
