@@ -333,8 +333,8 @@ export function HomeScreen({
               <Typography variant="body" style={styles.sectionMeta}>
                 {currentEvent.eventDate?.trim() ? `${currentEvent.eventDate.trim()} · ` : ""}
                 {currentEventSummary
-                  ? `${currentEventSummary.total} people added · ${currentEventSummary.outstanding} still need follow-up.`
-                  : "Any person saved now will be attached to this event."}
+                  ? `${currentEventSummary.total} people added · ${currentEventSummary.outstanding} still need follow-up. New captures will keep tagging to this event until you exit event mode.`
+                  : "Any person saved now will be attached to this event until you exit event mode."}
               </Typography>
             </Card>
           ) : null}
@@ -402,6 +402,9 @@ export function HomeScreen({
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Typography variant="caption">Due today</Typography>
+                <Typography variant="body" style={styles.sectionMeta}>
+                  Follow-ups scheduled for today.
+                </Typography>
               </View>
               {dueTodayPeople.map((person) => renderPersonCard(person, "muted"))}
             </View>
@@ -411,6 +414,9 @@ export function HomeScreen({
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Typography variant="caption">Overdue</Typography>
+                <Typography variant="body" style={styles.sectionMeta}>
+                  Follow-ups with dates before today.
+                </Typography>
               </View>
               {overduePeople.map((person) => renderPersonCard(person, "muted"))}
             </View>
@@ -419,6 +425,9 @@ export function HomeScreen({
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Typography variant="caption">Recently connected</Typography>
+              <Typography variant="body" style={styles.sectionMeta}>
+                Latest people you captured or updated.
+              </Typography>
             </View>
 
             {recentPeople.map((person) => renderPersonCard(person))}
@@ -430,6 +439,9 @@ export function HomeScreen({
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Typography variant="caption">Needs follow-up</Typography>
+              <Typography variant="body" style={styles.sectionMeta}>
+                Stale high-priority relationships that may need a nudge.
+              </Typography>
             </View>
             {followUpPeople.map((person) => renderPersonCard(person, "muted"))}
             {!isLoading && followUpPeople.length === 0 ? (

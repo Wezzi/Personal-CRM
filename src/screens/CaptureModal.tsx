@@ -36,10 +36,10 @@ import {
   FollowUpPreset,
   formatCategoryLabel,
   formatFollowUpDate,
-  getPresetDate,
   getSuggestedFollowUpPreset,
   PersonPriority,
   PreferredChannel,
+  toDateOnlyString,
 } from "../lib/crm";
 import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 
@@ -153,16 +153,81 @@ function buildDraftSentence(draft: ParsedPersonDraft) {
 
 function getSuggestedPresetLabel(category: EventCategory | "" | null | undefined) {
   const preset = getSuggestedFollowUpPreset(category || null);
+  return formatFollowUpOptionLabel(getPresetDateTime(preset));
+}
+
+function getPresetDateTime(preset: FollowUpPreset, baseDate = new Date()) {
+  const date = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 10, 0, 0, 0);
+
   if (preset === "tomorrow") {
+<<<<<<< HEAD
     return "Tomorrow";
+=======
+    date.setDate(date.getDate() + 1);
+    date.setHours(10, 0, 0, 0);
+  } else if (preset === "in3days") {
+    date.setDate(date.getDate() + 3);
+    date.setHours(14, 30, 0, 0);
+  } else if (preset === "nextWeek") {
+    date.setDate(date.getDate() + 7);
+    date.setHours(10, 0, 0, 0);
+>>>>>>> 9150094559f9b41630e07d78d87d16b3e107baa0
   }
-  if (preset === "in3days") {
-    return "In 3 days";
+
+  return date.toISOString();
+}
+
+function formatFollowUpOptionLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Pick date + time";
   }
-  if (preset === "nextWeek") {
-    return "Next week";
+
+  const dayLabel = date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const timeLabel = date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return `${dayLabel} • ${timeLabel}`;
+}
+
+function toTimeInputValue(date: Date) {
+  return `${date.getHours()}`.padStart(2, "0") + `:${date.getMinutes()}`.padStart(2, "0");
+}
+
+function getCustomDateTimeParts(value?: string | null) {
+  const parsed = value?.includes("T") ? new Date(value) : value ? new Date(`${value}T10:00:00`) : new Date(getPresetDateTime("nextWeek"));
+  const safeDate = Number.isNaN(parsed.getTime()) ? new Date(getPresetDateTime("nextWeek")) : parsed;
+
+  return {
+    date: toDateOnlyString(safeDate),
+    time: toTimeInputValue(safeDate),
+  };
+}
+
+function combineCustomDateTime(dateValue: string, timeValue: string) {
+  const dateMatch = dateValue.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = timeValue.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!dateMatch || !timeMatch) {
+    return null;
   }
-  return "Custom";
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+
+  if (hour > 23 || minute > 59) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString();
 }
 
 function parsePastedInput(rawValue: string, lockedEvent?: LockedEventDraft | null) {
@@ -285,6 +350,8 @@ export function CaptureModal({
   const [isFollowUpManuallySet, setFollowUpManuallySet] = useState(false);
   const [activeMethod, setActiveMethod] = useState<QuickCaptureMethod>(initialMethod);
   const [pasteInput, setPasteInput] = useState("");
+  const [customFollowUpDate, setCustomFollowUpDate] = useState("");
+  const [customFollowUpTime, setCustomFollowUpTime] = useState("10:00");
   const [hasHydratedSavedDraft, setHasHydratedSavedDraft] = useState(false);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -309,7 +376,7 @@ export function CaptureModal({
 
       const eventCategory: EventCategory | "" = lockedEvent?.category || initialDraft?.eventCategory || "";
       const followUpPreset = initialDraft?.followUpPreset || getSuggestedFollowUpPreset(eventCategory || null);
-      const nextFollowUpAt = initialDraft?.nextFollowUpAt || getPresetDate(followUpPreset);
+      const nextFollowUpAt = initialDraft?.nextFollowUpAt || getPresetDateTime(followUpPreset);
       const baseDraft: ParsedPersonDraft = {
         ...emptyDraft,
         ...initialDraft,
@@ -353,6 +420,9 @@ export function CaptureModal({
       );
       setActiveMethod(savedDraft?.activeMethod || initialMethod);
       setPasteInput(savedDraft?.pasteInput || initialDraft?.rawInput || "");
+      const customParts = getCustomDateTimeParts(nextDraft.nextFollowUpAt);
+      setCustomFollowUpDate(customParts.date);
+      setCustomFollowUpTime(customParts.time);
       setScanError(null);
       setIsCardScanProcessing(false);
       setIsScanChoiceVisible(false);
@@ -392,16 +462,31 @@ export function CaptureModal({
     }
 
     const preset = getSuggestedFollowUpPreset(draft.eventCategory || null);
+    const nextFollowUpAt = getPresetDateTime(preset);
+    const customParts = getCustomDateTimeParts(nextFollowUpAt);
+    setCustomFollowUpDate(customParts.date);
+    setCustomFollowUpTime(customParts.time);
     setDraft((current) => ({
       ...current,
       followUpPreset: preset,
-      nextFollowUpAt: getPresetDate(preset),
+      nextFollowUpAt,
     }));
   }, [draft.eventCategory, isFollowUpManuallySet, visible]);
 
   const sentencePreview = useMemo(() => buildDraftSentence(draft), [draft]);
   const canSave = cleanValue(draft.name).length > 0;
   const suggestedPresetLabel = getSuggestedPresetLabel(draft.eventCategory || lockedEvent?.category || null);
+  const followUpPresetOptions = useMemo(
+    () => (["tomorrow", "in3days", "nextWeek"] as const).map((preset) => {
+      const value = getPresetDateTime(preset);
+      return {
+        preset,
+        value,
+        label: formatFollowUpOptionLabel(value),
+      };
+    }),
+    []
+  );
 
   function updateField(field: keyof ParsedPersonDraft, value: string) {
     setDraft((current) => ({
@@ -629,20 +714,49 @@ export function CaptureModal({
   }
 
   function handleFollowUpPresetSelect(preset: FollowUpPreset) {
+    const nextFollowUpAt = getPresetDateTime(preset);
+    const customParts = getCustomDateTimeParts(nextFollowUpAt);
     setFollowUpManuallySet(true);
+    setCustomFollowUpDate(customParts.date);
+    setCustomFollowUpTime(customParts.time);
     setDraft((current) => ({
       ...current,
       followUpPreset: preset,
-      nextFollowUpAt: getPresetDate(preset),
+      nextFollowUpAt,
     }));
   }
 
   function handleCustomFollowUp() {
     setFollowUpManuallySet(true);
+    const fallback = getPresetDateTime("nextWeek");
     setDraft((current) => ({
       ...current,
       followUpPreset: "custom",
-      nextFollowUpAt: current.nextFollowUpAt || getPresetDate("nextWeek"),
+      nextFollowUpAt: current.nextFollowUpAt || fallback,
+    }));
+
+    const customParts = getCustomDateTimeParts(draft.nextFollowUpAt || fallback);
+    setCustomFollowUpDate(customParts.date);
+    setCustomFollowUpTime(customParts.time);
+  }
+
+  function updateCustomFollowUpDate(value: string) {
+    setCustomFollowUpDate(value);
+    const combinedValue = combineCustomDateTime(value, customFollowUpTime);
+    setDraft((current) => ({
+      ...current,
+      followUpPreset: "custom",
+      nextFollowUpAt: combinedValue || current.nextFollowUpAt,
+    }));
+  }
+
+  function updateCustomFollowUpTime(value: string) {
+    setCustomFollowUpTime(value);
+    const combinedValue = combineCustomDateTime(customFollowUpDate, value);
+    setDraft((current) => ({
+      ...current,
+      followUpPreset: "custom",
+      nextFollowUpAt: combinedValue || current.nextFollowUpAt,
     }));
   }
 
@@ -689,13 +803,17 @@ export function CaptureModal({
   function resetForAnotherCapture() {
     const eventCategory: EventCategory | "" = lockedEvent?.category || "";
     const followUpPreset = getSuggestedFollowUpPreset(eventCategory || null);
+    const nextFollowUpAt = getPresetDateTime(followUpPreset);
+    const customParts = getCustomDateTimeParts(nextFollowUpAt);
     setDraft({
       ...emptyDraft,
       event: lockedEvent?.name || "",
       eventCategory,
       followUpPreset,
-      nextFollowUpAt: getPresetDate(followUpPreset),
+      nextFollowUpAt,
     });
+    setCustomFollowUpDate(customParts.date);
+    setCustomFollowUpTime(customParts.time);
     setPasteInput("");
     setActiveMethod(initialMethod);
     setFollowUpManuallySet(false);
@@ -1060,7 +1178,18 @@ export function CaptureModal({
                   Suggested from event type: {suggestedPresetLabel}
                 </Typography>
                 <View style={styles.chipRow}>
+                  {followUpPresetOptions.map((option) => (
+                    <Button
+                      key={option.preset}
+                      label={option.label}
+                      onPress={() => handleFollowUpPresetSelect(option.preset)}
+                      variant={draft.followUpPreset === option.preset ? "primary" : "ghost"}
+                      fullWidth={false}
+                      size="compact"
+                    />
+                  ))}
                   <Button
+<<<<<<< HEAD
                     label="Tomorrow"
                     onPress={() => handleFollowUpPresetSelect("tomorrow")}
                     variant={draft.followUpPreset === "tomorrow" ? "primary" : "ghost"}
@@ -1083,6 +1212,9 @@ export function CaptureModal({
                   />
                   <Button
                     label="Custom"
+=======
+                    label="Pick date + time"
+>>>>>>> 9150094559f9b41630e07d78d87d16b3e107baa0
                     onPress={handleCustomFollowUp}
                     variant={draft.followUpPreset === "custom" ? "primary" : "ghost"}
                     fullWidth={false}
@@ -1095,15 +1227,32 @@ export function CaptureModal({
                   </Typography>
                 ) : null}
                 {draft.followUpPreset === "custom" ? (
-                  <TextInput
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
-                    value={draft.nextFollowUpAt}
-                    onChangeText={(value) => updateField("nextFollowUpAt", value)}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
+                  <View style={styles.twoColumnRow}>
+                    <View style={styles.metaInputBlock}>
+                      <Typography variant="caption">Custom date</Typography>
+                      <TextInput
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={colors.textTertiary}
+                        style={styles.fieldInput}
+                        value={customFollowUpDate}
+                        onChangeText={updateCustomFollowUpDate}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                    </View>
+                    <View style={styles.metaInputBlock}>
+                      <Typography variant="caption">Custom time</Typography>
+                      <TextInput
+                        placeholder="14:30"
+                        placeholderTextColor={colors.textTertiary}
+                        style={styles.fieldInput}
+                        value={customFollowUpTime}
+                        onChangeText={updateCustomFollowUpTime}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                    </View>
+                  </View>
                 ) : null}
               </View>
             </Card>

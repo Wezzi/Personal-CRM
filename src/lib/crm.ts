@@ -139,7 +139,7 @@ export function parseDateOnlyString(value?: string | null) {
     return null;
   }
 
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) {
     return null;
   }
@@ -186,16 +186,28 @@ export function getPresetDate(preset: FollowUpPreset, baseDate = new Date()) {
 }
 
 export function formatFollowUpDate(value?: string | null) {
-  const parsed = parseDateOnlyString(value);
-  if (!parsed) {
+  const hasTime = Boolean(value?.includes("T"));
+  const parsed = hasTime ? new Date(value as string) : parseDateOnlyString(value);
+  if (!parsed || Number.isNaN(parsed.getTime())) {
     return "No follow-up date";
   }
 
-  return parsed.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
+  const dayLabel = parsed.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+
+  if (!hasTime) {
+    return dayLabel;
+  }
+
+  const timeLabel = parsed.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
   });
+
+  return `${dayLabel} • ${timeLabel}`;
 }
 
 export function normalizeEventDate(value?: string | null) {
