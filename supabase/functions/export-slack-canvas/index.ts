@@ -178,6 +178,7 @@ Deno.serve(async (req) => {
       }, 409);
     }
 
+    console.error("Slack Canvas export failed", slackResult);
     return json(
       {
         error: slackResult?.error || "slack_request_failed",

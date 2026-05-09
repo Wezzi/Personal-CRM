@@ -25,7 +25,13 @@ export async function exportSlackCanvas(input: { title: string; markdown: string
     let details = "Slack Canvas export failed.";
     try {
       const body = await error.context.json();
-      details = body?.error || body?.details || JSON.stringify(body);
+      const primary = body?.error || "Slack Canvas export failed.";
+      const extra = typeof body?.details === "string"
+        ? body.details
+        : body?.details
+          ? JSON.stringify(body.details)
+          : body?.detail || body?.warning || "";
+      details = extra ? `${primary}: ${extra}` : primary;
     } catch {
       try {
         details = await error.context.text();
