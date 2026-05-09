@@ -30,6 +30,7 @@ function formatPersonLine(person: SlackCanvasPerson) {
 export function buildSlackCanvasSummary(input: {
   eventName: string;
   eventDate?: string | null;
+  campaignLink?: string | null;
   people: SlackCanvasPerson[];
 }) {
   const overdue = input.people.filter((person) => person.followUpState === "overdue");
@@ -40,6 +41,7 @@ export function buildSlackCanvasSummary(input: {
 
   const sections = [
     `# ${input.eventName} follow-up summary${eventDate}`,
+    input.campaignLink ? `Campaign link: ${input.campaignLink}` : "",
     `People captured: ${input.people.length}`,
     `Follow-ups due: ${overdue.length + dueToday.length}`,
     "",

@@ -19,7 +19,7 @@ import {
 } from "./src/lib/analytics";
 import { supabaseConfigMessage } from "./src/lib/supabase";
 import { getEmailDigestEnabled, setEmailDigestEnabled } from "./src/lib/reminders";
-import { getFeatureAccess } from "./src/lib/access";
+import { FeatureAccess, getFeatureAccessForUser, getPublicFeatureAccess } from "./src/lib/access";
 import { Button } from "./src/components/ui/Button";
 import { AuthScreen } from "./src/screens/AuthScreen";
 import { EventScreen } from "./src/screens/EventScreen";
@@ -106,6 +106,23 @@ function titleCaseFromSlug(value: string) {
     .join(" ");
 }
 
+function getCampaignSlugFromUrl() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const pathMatch = window.location.pathname.match(/^\/e\/([^/?#]+)/);
+  const params = new URLSearchParams(window.location.search);
+  const value =
+    pathMatch?.[1] ||
+    params.get("event_slug") ||
+    params.get("event") ||
+    params.get("event_source") ||
+    params.get("source");
+
+  return value ? decodeURIComponent(value).trim() : null;
+}
+
 function hasMagicEventInUrl() {
   if (typeof window === "undefined") {
     return false;
@@ -151,6 +168,7 @@ function getMagicEventCategory(attribution: InviteAttribution): Pick<CurrentEven
 function buildMagicCurrentEvent(attribution: InviteAttribution): CurrentEventValue | null {
   const eventSource = attribution.eventSource?.trim();
   const eventName = attribution.eventName?.trim() || (eventSource ? titleCaseFromSlug(eventSource) : "");
+  const campaignSlug = getCampaignSlugFromUrl() || eventSource || null;
   if (!eventName) {
     return null;
   }
@@ -162,6 +180,8 @@ function buildMagicCurrentEvent(attribution: InviteAttribution): CurrentEventVal
     category: category.category,
     customCategoryLabel: category.customCategoryLabel,
     eventDate: normalizeEventDate(attribution.eventDate) || null,
+    campaignSlug,
+    isCampaignMode: Boolean(campaignSlug),
   };
 }
 
@@ -189,8 +209,8 @@ function AppShell() {
   const [isEventWrapUpOpen, setEventWrapUpOpen] = useState(false);
   const [currentEvent, setCurrentEvent] = useState<CurrentEventValue | null>(null);
   const [tutorialStep, setTutorialStep] = useState<TutorialStep | null>(null);
+  const [featureAccess, setFeatureAccess] = useState<FeatureAccess>(getPublicFeatureAccess());
   const welcomeName = getWelcomeName(activeUser, currentUsername);
-  const featureAccess = getFeatureAccess(activeUser);
 
   if (supabaseConfigMessage) {
     return (
@@ -228,6 +248,23 @@ useEffect(() => {
     auth_provider: activeUser.app_metadata?.provider,
   });
 }, [activeUser, currentUsername]);
+
+useEffect(() => {
+  let isMounted = true;
+
+  async function hydrateFeatureAccess() {
+    const access = await getFeatureAccessForUser(activeUser);
+    if (isMounted) {
+      setFeatureAccess(access);
+    }
+  }
+
+  void hydrateFeatureAccess();
+
+  return () => {
+    isMounted = false;
+  };
+}, [activeUser]);
 
 useEffect(() => {
   let isMounted = true;

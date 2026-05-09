@@ -407,7 +407,7 @@ export async function ensureProfileForUser(user: User) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const suffix = attempt === 0 ? "" : `_${Math.floor(Math.random() * 900 + 100)}`;
     const username = validateUsername(`${base}${suffix}`.slice(0, 24));
-    const { error } = await client.from("profiles").insert({ user_id: user.id, username });
+    const { error } = await client.from("profiles").insert({ user_id: user.id, username, email: user.email || null });
 
     if (!error) {
       return username;

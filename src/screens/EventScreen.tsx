@@ -30,6 +30,7 @@ import {
   parseDateOnlyString,
   updateEventDetails,
 } from "../lib/crm";
+import { buildCampaignUrl } from "../lib/campaign";
 import { buildPeopleCsv, exportCsvFile, getPeopleForEventExport } from "../lib/csvExport";
 import { buildSlackCanvasSummary } from "../lib/slackCanvas";
 import { layout, useTheme, useThemedStyles } from "../theme/tokens";
@@ -81,6 +82,7 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
   const [isSavingEvent, setSavingEvent] = useState(false);
   const [isDeletingEvent, setDeletingEvent] = useState(false);
   const [isExportingCsv, setExportingCsv] = useState(false);
+  const [isCopyingCampaignLink, setCopyingCampaignLink] = useState(false);
   const [isCopyingSlackCanvas, setCopyingSlackCanvas] = useState(false);
   const [deleteArmedEventId, setDeleteArmedEventId] = useState<string | null>(null);
   const [eventEditorMode, setEventEditorMode] = useState<"create" | "edit">("create");
@@ -560,6 +562,27 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
     }
   }
 
+  async function handleCopyCampaignLink(targetEvent = selectedEvent) {
+    if (!targetEvent || isCopyingCampaignLink) {
+      return;
+    }
+
+    try {
+      setCopyingCampaignLink(true);
+      const url = buildCampaignUrl({
+        name: targetEvent.name,
+        category: targetEvent.category,
+        eventDate: targetEvent.eventDate,
+      });
+      await Clipboard.setStringAsync(url);
+      Alert.alert("Campaign link copied", "Send this link to testers so captures open inside this event.");
+    } catch {
+      Alert.alert("Could not copy campaign link", "Try again in a moment.");
+    } finally {
+      setCopyingCampaignLink(false);
+    }
+  }
+
   async function handleCopySlackCanvas(targetEvent = selectedEvent) {
     if (!targetEvent || isCopyingSlackCanvas) {
       return;
@@ -585,6 +608,11 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
         buildSlackCanvasSummary({
           eventName: targetEvent.name,
           eventDate: targetEvent.eventDate,
+          campaignLink: buildCampaignUrl({
+            name: targetEvent.name,
+            category: targetEvent.category,
+            eventDate: targetEvent.eventDate,
+          }),
           people: exportPeople,
         })
       );
@@ -625,6 +653,11 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
               <Typography variant="body" style={styles.secondaryText}>
                 {currentEventSummary.peopleCount} people added · {currentEventSummary.followUpsDue} follow-ups due
               </Typography>
+              {currentEvent.isCampaignMode && currentEvent.campaignSlug ? (
+                <Typography variant="caption" style={styles.secondaryText}>
+                  Campaign mode · /e/{currentEvent.campaignSlug}
+                </Typography>
+              ) : null}
               <View style={styles.featureActions}>
                 <Button
                   label="View event"
@@ -727,6 +760,14 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                 />
                 <Button label="Edit" onPress={() => openEditEvent()} variant="ghost" fullWidth={false} size="compact" />
                 <Button
+                  label="Copy campaign link"
+                  onPress={() => void handleCopyCampaignLink(selectedEvent)}
+                  variant="ghost"
+                  fullWidth={false}
+                  size="compact"
+                  loading={isCopyingCampaignLink}
+                />
+                <Button
                   label="Copy Slack Canvas"
                   onPress={() => void handleCopySlackCanvas(selectedEvent)}
                   variant="ghost"
@@ -798,6 +839,14 @@ export function EventScreen({ currentEvent, onSetCurrentEvent, onEndCurrentEvent
                       <View style={styles.eventActions}>
                         <Button label="View" onPress={() => setSelectedEventId(event.id)} variant="ghost" fullWidth={false} size="compact" />
                         <Button label="Edit" onPress={() => openEditEvent(event)} variant="ghost" fullWidth={false} size="compact" />
+                        <Button
+                          label="Copy campaign link"
+                          onPress={() => void handleCopyCampaignLink(event)}
+                          variant="ghost"
+                          fullWidth={false}
+                          size="compact"
+                          loading={isCopyingCampaignLink}
+                        />
                         <Button
                           label="Copy Slack Canvas"
                           onPress={() => void handleCopySlackCanvas(event)}

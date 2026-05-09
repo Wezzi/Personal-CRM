@@ -14,6 +14,8 @@ export type CurrentEventValue = {
   category: EventCategory;
   eventDate?: string | null;
   customCategoryLabel?: string | null;
+  campaignSlug?: string | null;
+  isCampaignMode?: boolean;
 };
 
 type CurrentEventSheetProps = {
