@@ -484,11 +484,24 @@ export function EventScreen({
 
   function handleCurrentEventToggle(event: (typeof events)[number]) {
     if (isCurrentEvent(event)) {
-      onEndCurrentEvent?.();
+      confirmEndCurrentEvent(event.name);
       return;
     }
 
     handleSetCurrentEvent(event);
+  }
+
+  function confirmEndCurrentEvent(eventName?: string) {
+    Alert.alert(
+      "End current event?",
+      eventName
+        ? `New captures will stop being added to ${eventName}. Existing people and notes stay saved.`
+        : "New captures will stop being added to this event. Existing people and notes stay saved.",
+      [
+        { text: "Keep event live", style: "cancel" },
+        { text: "End event", style: "destructive", onPress: () => onEndCurrentEvent?.() },
+      ]
+    );
   }
 
   async function handleDeleteEvent(targetEvent = selectedEvent) {
@@ -736,7 +749,7 @@ export function EventScreen({
                   fullWidth={false}
                   size="compact"
                 />
-                <Button label="End event" onPress={() => onEndCurrentEvent?.()} variant="ghost" fullWidth={false} size="compact" />
+                <Button label="End event" onPress={() => confirmEndCurrentEvent(currentEvent.name)} variant="ghost" fullWidth={false} size="compact" />
               </View>
             </Card>
           ) : null}
@@ -805,12 +818,18 @@ export function EventScreen({
 
           {selectedEvent ? (
             <Card style={styles.featureCard}>
-              <Typography variant="h2">{selectedEvent.name}</Typography>
-              <Typography variant="caption" style={styles.secondaryText}>
-                {formatCategoryLabel(selectedEvent.category)}
-                {selectedEvent.eventDate ? ` · ${formatEventDate(selectedEvent.eventDate)}` : ""}
-                {` · ${selectedEvent.interactionCount} notes · ${selectedEvent.peopleCount} people`}
-              </Typography>
+              <View style={styles.eventHeader}>
+                <LiveEventBadge eventDate={selectedEvent.eventDate} />
+                <Button label="Edit" onPress={() => openEditEvent()} variant="ghost" fullWidth={false} size="compact" />
+              </View>
+              <View style={styles.eventCopy}>
+                <Typography variant="h2">{selectedEvent.name}</Typography>
+                <Typography variant="caption" style={styles.secondaryText}>
+                  {formatCategoryLabel(selectedEvent.category)}
+                  {selectedEvent.eventDate ? ` · ${formatEventDate(selectedEvent.eventDate)}` : ""}
+                  {` · ${selectedEvent.interactionCount} notes · ${selectedEvent.peopleCount} people`}
+                </Typography>
+              </View>
               {selectedEventFollowUpSummary ? (
                 <Typography variant="caption">
                   Due today {selectedEventFollowUpSummary.dueToday} · Overdue {selectedEventFollowUpSummary.overdue} · Upcoming {selectedEventFollowUpSummary.upcoming}
@@ -823,17 +842,6 @@ export function EventScreen({
                   fullWidth={false}
                   size="compact"
                 />
-                <Button label="Edit" onPress={() => openEditEvent()} variant="ghost" fullWidth={false} size="compact" />
-                {canManageCampaignLinks ? (
-                  <Button
-                    label="Copy campaign link"
-                    onPress={() => void handleCopyCampaignLink(selectedEvent)}
-                    variant="ghost"
-                    fullWidth={false}
-                    size="compact"
-                    loading={isCopyingCampaignLink}
-                  />
-                ) : null}
                 <Button
                   label="Copy Slack Canvas"
                   onPress={() => void handleCopySlackCanvas(selectedEvent)}
@@ -860,6 +868,16 @@ export function EventScreen({
                     fullWidth={false}
                     size="compact"
                     loading={isExportingCsv}
+                  />
+                ) : null}
+                {canManageCampaignLinks ? (
+                  <Button
+                    label="Copy campaign link"
+                    onPress={() => void handleCopyCampaignLink(selectedEvent)}
+                    variant="ghost"
+                    fullWidth={false}
+                    size="compact"
+                    loading={isCopyingCampaignLink}
                   />
                 ) : null}
                 <Button
@@ -899,16 +917,12 @@ export function EventScreen({
                       ]}
                     >
                       <View style={styles.eventHeader}>
-                        <Typography variant="body" style={styles.secondaryText}>
-                          {formatCategoryLabel(event.category as never)}
-                        </Typography>
-                        <Typography variant="caption">
-                          {event.eventDate ? formatEventDate(event.eventDate) : "No date set"}
-                        </Typography>
+                        <LiveEventBadge eventDate={event.eventDate} />
+                        <Typography variant="caption">{event.eventDate ? formatEventDate(event.eventDate) : "No date set"}</Typography>
                       </View>
                       <Typography variant="h2">{event.name}</Typography>
                       <Typography variant="caption">
-                        {summary.peopleCount} people · {event.interactionCount} notes
+                        {formatCategoryLabel(event.category as never)} · {summary.peopleCount} people · {event.interactionCount} notes
                       </Typography>
                       <Typography variant="caption">
                         Due today {summary.dueToday} · Overdue {summary.overdue} · Upcoming {summary.upcoming}
@@ -916,44 +930,6 @@ export function EventScreen({
                       <View style={styles.eventActions}>
                         <Button label="View" onPress={() => setSelectedEventId(event.id)} variant="ghost" fullWidth={false} size="compact" />
                         <Button label="Edit" onPress={() => openEditEvent(event)} variant="ghost" fullWidth={false} size="compact" />
-                        {canManageCampaignLinks ? (
-                          <Button
-                            label="Copy campaign link"
-                            onPress={() => void handleCopyCampaignLink(event)}
-                            variant="ghost"
-                            fullWidth={false}
-                            size="compact"
-                            loading={isCopyingCampaignLink}
-                          />
-                        ) : null}
-                        <Button
-                          label="Copy Slack Canvas"
-                          onPress={() => void handleCopySlackCanvas(event)}
-                          variant="ghost"
-                          fullWidth={false}
-                          size="compact"
-                          loading={isCopyingSlackCanvas}
-                        />
-                        {canDirectSlackCanvas ? (
-                          <Button
-                            label="Create Slack Canvas"
-                            onPress={() => void handleExportSlackCanvas(event)}
-                            variant="ghost"
-                            fullWidth={false}
-                            size="compact"
-                            loading={isExportingSlackCanvas}
-                          />
-                        ) : null}
-                        {canExportCsv ? (
-                          <Button
-                            label="Export CSV"
-                            onPress={() => void handleExportCsv(event)}
-                            variant="ghost"
-                            fullWidth={false}
-                            size="compact"
-                            loading={isExportingCsv}
-                          />
-                        ) : null}
                         <Button
                           label={isCurrentEvent(event) ? "End event" : "Set current"}
                           onPress={() => handleCurrentEventToggle(event)}
