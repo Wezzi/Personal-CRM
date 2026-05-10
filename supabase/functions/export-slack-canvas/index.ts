@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
     return json({ error: "Missing markdown." }, 400);
   }
 
-  const response = await fetch("https://slack.com/api/conversations.canvases.create", {
+  const response = await fetch("https://slack.com/api/canvases.create", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${slackBotToken}`,
