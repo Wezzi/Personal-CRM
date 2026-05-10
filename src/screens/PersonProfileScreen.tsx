@@ -44,6 +44,7 @@ type UpdateInteractionType = "met" | "called" | "emailed" | "messaged" | "follow
 type UpdateStatus = "warm" | "needsAction" | "waiting" | "doneForNow";
 type PeopleView = "needsFollowUp" | "recentlyMet" | "allContacts";
 type FollowUpOutcome = "Sent" | "Replied" | "No response" | "Converted" | "Not relevant";
+type FollowUpChannelAction = "whatsapp" | "linkedin" | "email" | "copy";
 export type PersonStatusMode = "all" | "today" | "recent" | "stale";
 
 type UpdateDraftState = {
@@ -1072,6 +1073,41 @@ export function PersonProfileScreen({
     });
   }
 
+  function getPrimaryFollowUpAction(person: (typeof people)[number]): { label: string; action: FollowUpChannelAction; disabled?: boolean } {
+    if (person.preferredChannel === "whatsapp") {
+      return { label: "Open WhatsApp", action: "whatsapp", disabled: !person.phoneNumber };
+    }
+
+    if (person.preferredChannel === "linkedin") {
+      return { label: "Copy + Open LinkedIn", action: "linkedin", disabled: !person.linkedinUrl };
+    }
+
+    if (person.preferredChannel === "email") {
+      return { label: "Open Email", action: "email", disabled: !person.email };
+    }
+
+    return { label: "Copy message", action: "copy" };
+  }
+
+  function runPrimaryFollowUpAction(person: (typeof people)[number], action: FollowUpChannelAction) {
+    if (action === "whatsapp") {
+      void openDraftMessage(person, followUpMessage);
+      return;
+    }
+
+    if (action === "linkedin") {
+      void copyLinkedInDraftAndOpen(person, followUpMessage);
+      return;
+    }
+
+    if (action === "email") {
+      void openEmailFollowUp(person);
+      return;
+    }
+
+    void copyFollowUpMessage();
+  }
+
   async function copyFollowUpMessage() {
     if (!followUpMessage.trim()) {
       return;
@@ -1665,14 +1701,6 @@ export function PersonProfileScreen({
                 <Typography variant="body" style={styles.featureBody}>
                   {selectedPerson.bannerLabel}
                 </Typography>
-                {selectedPerson.nextFollowUpAt ? (
-                  <>
-                    <Typography variant="body" style={styles.metaDivider}>·</Typography>
-                    <Pressable onPress={() => void handleAddToCalendar(selectedPerson)} style={styles.inlineMetaAction}>
-                      <Typography variant="body" style={styles.inlineMetaActionText}>📅 Add to Calendar</Typography>
-                    </Pressable>
-                  </>
-                ) : null}
                 <Typography variant="body" style={styles.metaDivider}>·</Typography>
                 <Typography variant="body" style={styles.featureBody}>
                   {getMomentLabel(selectedPerson.interactionCount)}
@@ -1783,11 +1811,6 @@ export function PersonProfileScreen({
                         </Typography>
                         <View style={styles.metaRow}>
                           <Typography variant="caption">{person.bannerLabel}</Typography>
-                          {person.nextFollowUpAt ? (
-                            <Pressable onPress={() => void handleAddToCalendar(person)} style={styles.inlineMetaAction}>
-                              <Typography variant="caption" style={styles.inlineMetaActionCaption}>📅 Add to Calendar</Typography>
-                            </Pressable>
-                          ) : null}
                           {isContactStale(person.daysSinceLastContact, person.priority) ? <Typography variant="caption">Need a nudge</Typography> : null}
                           <Typography variant="caption">{getMomentLabel(person.interactionCount)}</Typography>
                         </View>
@@ -2118,6 +2141,11 @@ export function PersonProfileScreen({
             <View style={styles.confirmCardWrap}>
               <Card style={styles.followUpCard}>
                 <ScrollView contentContainerStyle={styles.followUpContent} showsVerticalScrollIndicator={false}>
+                  {(() => {
+                    const primaryFollowUpAction = getPrimaryFollowUpAction(followUpPerson);
+
+                    return (
+                      <>
                   <View style={styles.selectedContactHeader}>
                     <View style={styles.selectedContactTitle}>
                       <Typography variant="caption">Execute follow-up</Typography>
@@ -2127,37 +2155,37 @@ export function PersonProfileScreen({
                     <Button label="Close" onPress={() => setFollowUpPerson(null)} variant="ghost" fullWidth={false} size="compact" />
                   </View>
 
-                  <View style={styles.followUpInfoGrid}>
-                    <View style={styles.followUpInfoBlock}>
-                      <Typography variant="caption">Met at</Typography>
-                      <Typography variant="body" style={styles.confirmMeta}>{followUpPerson.lastEventName || "No event logged"}</Typography>
+                  <View style={styles.followUpContextCard}>
+                    <View style={styles.followUpInfoGrid}>
+                      <View style={styles.followUpInfoBlock}>
+                        <Typography variant="caption">Met at</Typography>
+                        <Typography variant="body" style={styles.confirmMeta}>{followUpPerson.lastEventName || "No event logged"}</Typography>
+                      </View>
+                      <View style={styles.followUpInfoBlock}>
+                        <Typography variant="caption">Preferred channel</Typography>
+                        <Typography variant="body" style={styles.confirmMeta}>
+                          {formatPreferredChannelLabel(followUpPerson.preferredChannel, followUpPerson.preferredChannelOther)}
+                        </Typography>
+                      </View>
                     </View>
-                    <View style={styles.followUpInfoBlock}>
-                      <Typography variant="caption">Preferred channel</Typography>
-                      <Typography variant="body" style={styles.confirmMeta}>
-                        {formatPreferredChannelLabel(followUpPerson.preferredChannel, followUpPerson.preferredChannelOther)}
-                      </Typography>
+
+                    <View style={styles.followUpInfoGrid}>
+                      <View style={styles.followUpInfoBlock}>
+                        <Typography variant="caption">Why</Typography>
+                        <Typography variant="body" style={styles.confirmPreview} numberOfLines={2}>{followUpPerson.whatMatters}</Typography>
+                      </View>
+                      <View style={styles.followUpInfoBlock}>
+                        <Typography variant="caption">Next</Typography>
+                        <Typography variant="body" style={styles.confirmPreview} numberOfLines={2}>{followUpPerson.nextStep || "No next step yet"}</Typography>
+                      </View>
                     </View>
+
+                    {followUpPerson.relationshipStatus ? (
+                      <Typography variant="caption" style={styles.confirmMeta}>Status: {followUpPerson.relationshipStatus}</Typography>
+                    ) : null}
                   </View>
 
-                  <View style={styles.followUpInfoBlock}>
-                    <Typography variant="caption">Why they matter</Typography>
-                    <Typography variant="body" style={styles.confirmPreview}>{followUpPerson.whatMatters}</Typography>
-                  </View>
-
-                  <View style={styles.followUpInfoBlock}>
-                    <Typography variant="caption">Next step</Typography>
-                    <Typography variant="body" style={styles.confirmPreview}>{followUpPerson.nextStep || "No next step yet"}</Typography>
-                  </View>
-
-                  {followUpPerson.relationshipStatus ? (
-                    <View style={styles.followUpInfoBlock}>
-                      <Typography variant="caption">Status</Typography>
-                      <Typography variant="body" style={styles.confirmPreview}>{followUpPerson.relationshipStatus}</Typography>
-                    </View>
-                  ) : null}
-
-                  <View style={styles.followUpInfoBlock}>
+                  <View style={styles.followUpDraftBlock}>
                     <Typography variant="caption">Suggested message</Typography>
                     <TextInput
                       value={followUpMessage}
@@ -2169,40 +2197,27 @@ export function PersonProfileScreen({
                     />
                   </View>
 
-                  <View style={styles.confirmActions}>
-                    <Button label="Copy message" onPress={() => void copyFollowUpMessage()} variant="ghost" fullWidth={false} size="compact" />
+                  <View style={styles.followUpPrimaryActions}>
                     <Button
-                      label="Open WhatsApp"
-                      onPress={() => void openDraftMessage(followUpPerson, followUpMessage)}
-                      variant={followUpPerson.preferredChannel === "whatsapp" ? "primary" : "ghost"}
+                      label={primaryFollowUpAction.label}
+                      onPress={() => runPrimaryFollowUpAction(followUpPerson, primaryFollowUpAction.action)}
                       fullWidth={false}
-                      size="compact"
-                      disabled={!followUpPerson.phoneNumber}
+                      disabled={primaryFollowUpAction.disabled}
                     />
-                    <Button
-                      label="Open LinkedIn"
-                      onPress={() => void copyLinkedInDraftAndOpen(followUpPerson, followUpMessage)}
-                      variant={followUpPerson.preferredChannel === "linkedin" ? "primary" : "ghost"}
-                      fullWidth={false}
-                      size="compact"
-                      disabled={!followUpPerson.linkedinUrl}
-                    />
-                    <Button
-                      label="Open Email"
-                      onPress={() => void openEmailFollowUp(followUpPerson)}
-                      variant={followUpPerson.preferredChannel === "email" ? "primary" : "ghost"}
-                      fullWidth={false}
-                      size="compact"
-                      disabled={!followUpPerson.email}
-                    />
-                    <Button label="Mark sent" onPress={() => void logFollowUpOutcome("Sent", followUpPerson)} fullWidth={false} size="compact" />
-                    <Button label="Snooze" onPress={() => void snoozeFollowUp(followUpPerson)} variant="ghost" fullWidth={false} size="compact" />
+                    {primaryFollowUpAction.action !== "copy" ? (
+                      <Button label="Copy message" onPress={() => void copyFollowUpMessage()} variant="ghost" fullWidth={false} />
+                    ) : null}
                   </View>
 
-                  <View style={styles.followUpInfoBlock}>
-                    <Typography variant="caption">Outcome</Typography>
+                  <View style={styles.followUpOutcomeBlock}>
+                    <View style={styles.followUpOutcomeHeader}>
+                      <Typography variant="caption">After sending</Typography>
+                      <Button label="Snooze" onPress={() => void snoozeFollowUp(followUpPerson)} variant="ghost" fullWidth={false} size="compact" />
+                    </View>
                     <View style={styles.confirmActions}>
+                      <Button label="Mark sent" onPress={() => void logFollowUpOutcome("Sent", followUpPerson)} fullWidth={false} size="compact" />
                       {(["Sent", "Replied", "No response", "Converted", "Not relevant"] as FollowUpOutcome[]).map((outcome) => (
+                        outcome === "Sent" ? null : (
                         <Button
                           key={outcome}
                           label={outcome}
@@ -2211,9 +2226,13 @@ export function PersonProfileScreen({
                           fullWidth={false}
                           size="compact"
                         />
+                        )
                       ))}
                     </View>
                   </View>
+                      </>
+                    );
+                  })()}
                 </ScrollView>
               </Card>
             </View>
@@ -2546,7 +2565,7 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     maxHeight: "88%",
   },
   followUpContent: {
-    gap: 12,
+    gap: 14,
   },
   confirmMeta: {
     color: colors.textSecondary,
@@ -2563,6 +2582,36 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     gap: 6,
     flex: 1,
     minWidth: 180,
+  },
+  followUpContextCard: {
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+    padding: 14,
+  },
+  followUpDraftBlock: {
+    gap: 8,
+  },
+  followUpPrimaryActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
+  followUpOutcomeBlock: {
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 12,
+  },
+  followUpOutcomeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
   },
   updateModalContainer: {
     flex: 1,
