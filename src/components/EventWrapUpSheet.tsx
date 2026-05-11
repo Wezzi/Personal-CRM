@@ -52,6 +52,9 @@ export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: E
 
   const summary = useMemo(() => {
     return {
+      readyToFollowUp: people.filter(
+        (person) => person.nextStep.trim() && person.nextFollowUpAt && person.preferredChannel
+      ).length,
       missingNextStep: people.filter((person) => !person.nextStep.trim()).length,
       missingReminder: people.filter((person) => !person.nextFollowUpAt).length,
       missingChannel: people.filter((person) => !person.preferredChannel).length,
@@ -72,7 +75,7 @@ export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: E
               <Typography variant="caption">Event wrap-up</Typography>
               <Typography variant="h1">{event.name}</Typography>
               <Typography variant="body" style={styles.metaText}>
-                Close the loop while the room is still fresh.
+                Your assistant checklist before this event turns into forgotten notes.
               </Typography>
             </View>
             <Button label="Close" onPress={onClose} variant="ghost" fullWidth={false} size="compact" />
@@ -83,6 +86,14 @@ export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: E
               <Card style={styles.summaryCard}>
                 <Typography variant="h2">{people.length}</Typography>
                 <Typography variant="caption">People captured</Typography>
+              </Card>
+              <Card style={styles.summaryCard}>
+                <Typography variant="h2">{summary.readyToFollowUp}</Typography>
+                <Typography variant="caption">Ready to follow up</Typography>
+              </Card>
+              <Card style={styles.summaryCard}>
+                <Typography variant="h2">{summary.dueOrOverdue}</Typography>
+                <Typography variant="caption">At risk now</Typography>
               </Card>
               <Card style={styles.summaryCard}>
                 <Typography variant="h2">{summary.missingReminder}</Typography>
@@ -105,6 +116,15 @@ export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: E
             ) : null}
 
             {isLoading ? <Typography variant="body">Loading event people...</Typography> : null}
+
+            {!isLoading && people.length ? (
+              <Card style={styles.assistantCard}>
+                <Typography variant="caption">Close-loop order</Typography>
+                <Typography variant="body" style={styles.metaText}>
+                  Add missing next steps first, set reminders second, then send the follow-ups that are already due.
+                </Typography>
+              </Card>
+            ) : null}
 
             {!isLoading && people.length === 0 ? (
               <Card style={styles.emptyCard}>
@@ -130,6 +150,9 @@ export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: E
                   {person.nextStep || person.whatMatters || "Add the next useful step."}
                 </Typography>
                 <View style={styles.nudgeRow}>
+                  {person.nextStep.trim() && person.nextFollowUpAt && person.preferredChannel ? (
+                    <View style={styles.readyPill}><Typography variant="caption" style={styles.readyPillText}>Ready</Typography></View>
+                  ) : null}
                   {!person.nextFollowUpAt ? <View style={styles.nudgePill}><Typography variant="caption">Set reminder</Typography></View> : null}
                   {!person.nextStep.trim() ? <View style={styles.nudgePill}><Typography variant="caption">Add next step</Typography></View> : null}
                   {!person.preferredChannel ? <View style={styles.nudgePill}><Typography variant="caption">Add channel</Typography></View> : null}
@@ -142,7 +165,7 @@ export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: E
           </ScrollView>
 
           <View style={styles.footer}>
-            <Button label="Done" onPress={onExitEventMode} />
+            <Button label="Finish event mode" onPress={onExitEventMode} />
           </View>
         </View>
       </SafeAreaView>
@@ -189,6 +212,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   emptyCard: {
     gap: 8,
   },
+  assistantCard: {
+    gap: 8,
+    backgroundColor: colors.surfaceMuted,
+  },
   personCard: {
     gap: 10,
   },
@@ -227,6 +254,17 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     paddingVertical: 7,
   },
   hotPillText: {
+    color: "#17843A",
+  },
+  readyPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.successSoft,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  readyPillText: {
     color: "#17843A",
   },
   footer: {

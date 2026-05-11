@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blackbook - The Mayfair Club</title>
+    <style>
+        /* THE MAYFAIR CLUB PALETTE (Light Mode Defaults) */
+        :root {
+            --bg-color: #F8FAFC;         /* Slate 50 - Cool off-white */
+            --surface-color: #FFFFFF;    /* Pure white for cards */
+            --text-primary: #0F172A;     /* Slate 900 - Almost black */
+            --text-secondary: #64748B;   /* Slate 500 - Muted grey */
+            --border-color: #E2E8F0;     /* Slate 200 - Soft dividers */
+            
+            --accent-color: #10B981;     /* Emerald 500 - The Money Button */
+            --accent-hover: #059669;     /* Emerald 600 */
+            
+            --danger-bg: #FEE2E2;        /* Soft red bg for alerts */
+            --danger-text: #DC2626;      /* Sharp red for alerts */
+            
+            --phone-bezel: #CBD5E1;      /* Light grey phone border */
+        }
+
+        /* THE MAYFAIR CLUB PALETTE (Dark Mode Overrides) */
+        [data-theme="dark"] {
+            --bg-color: #0F172A;         /* Slate 900 - Deep slate blue */
+            --surface-color: #1E293B;    /* Slate 800 - Elevated card color */
+            --text-primary: #F8FAFC;     /* Slate 50 - Ice white */
+            --text-secondary: #94A3B8;   /* Slate 400 - Cool muted grey */
+            --border-color: #334155;     /* Slate 700 - Subtle dark dividers */
+            
+            --accent-color: #10B981;     /* Emerald 500 - Remains the same! */
+            --accent-hover: #34D399;     /* Emerald 400 */
+            
+            --danger-bg: rgba(220, 38, 38, 0.15); /* Translucent red */
+            --danger-text: #EF4444;      /* Bright red */
+            
+            --phone-bezel: #111111;      /* Dark phone border */
+        }
+
+        /* STRUCTURAL STYLES */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #888; /* Just a backdrop for the demo */
+            transition: background-color 0.3s ease;
+        }
+
+        .theme-toggle {
+            position: absolute;
+            top: 30px;
+            padding: 12px 24px;
+            border-radius: 30px;
+            border: none;
+            background: #111;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease;
+        }
+
+        .theme-toggle:active {
+            transform: scale(0.95);
+        }
+
+        .phone-container {
+            width: 375px;
+            height: 812px;
+            border-radius: 40px;
+            overflow: hidden;
+            border: 12px solid var(--phone-bezel);
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        /* APP UI STYLES */
+        .app-header {
+            padding: 50px 20px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .app-header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .content-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .contact-card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .contact-info h2 {
+            margin: 0 0 4px 0;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .contact-info p {
+            margin: 0;
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-overdue {
+            background-color: var(--danger-bg);
+            color: var(--danger-text);
+            font-size: 10px;
+            font-weight: 800;
+            padding: 6px 10px;
+            border-radius: 8px;
+            text-transform: uppercase;
+        }
+
+        .input-group {
+            margin-top: 10px;
+        }
+
+        .input-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .quick-tag-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .quick-tag {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .quick-tag.active {
+            background-color: var(--text-primary);
+            color: var(--surface-color);
+            border-color: var(--text-primary);
+        }
+
+        .bottom-action {
+            padding: 20px;
+            background-color: var(--surface-color);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .btn-execute {
+            width: 100%;
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 18px;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+            transition: background-color 0.2s;
+        }
+
+        .btn-execute:active {
+            background-color: var(--accent-hover);
+        }
+    </style>
+</head>
+<body data-theme="dark">
+
+    <button class="theme-toggle" onclick="toggleTheme()">☀️ Switch to Light Mode</button>
+
+    <div class="phone-container">
+        
+        <div class="app-header">
+            <h1>Capture</h1>
+        </div>
+
+        <div class="content-area">
+            
+            <div class="contact-card">
+                <div class="contact-info">
+                    <h2>Vasily Alekseenko</h2>
+                    <p>CEO • RARE FOUNDERS</p>
+                </div>
+                <div class="badge-overdue">Needs Attention</div>
+            </div>
+
+            <div class="input-group" style="margin-top: 20px;">
+                <label class="input-label">Primary Goal</label>
+                <div class="quick-tag-row">
+                    <div class="quick-tag active">Pitch App</div>
+                    <div class="quick-tag">Raise Capital</div>
+                    <div class="quick-tag">Hire Team</div>
+                    <div class="quick-tag">Get Intro</div>
+                </div>
+            </div>
+
+            <div class="input-group" style="margin-top: 20px;">
+                <label class="input-label">Execution Channel</label>
+                <div class="quick-tag-row">
+                    <div class="quick-tag active">WhatsApp</div>
+                    <div class="quick-tag">LinkedIn</div>
+                    <div class="quick-tag">Email</div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="bottom-action">
+            <button class="btn-execute">Draft WhatsApp • Wed 3:00 PM</button>
+        </div>
+
+    </div>
+
+    <script>
+        function toggleTheme() {
+            const body = document.body;
+            const btn = document.querySelector('.theme-toggle');
+            
+            if (body.getAttribute('data-theme') === 'dark') {
+                body.removeAttribute('data-theme');
+                btn.textContent = '🌙 Switch to Dark Mode';
+                btn.style.background = '#FFFFFF';
+                btn.style.color = '#111111';
+            } else {
+                body.setAttribute('data-theme', 'dark');
+                btn.textContent = '☀️ Switch to Light Mode';
+                btn.style.background = '#111111';
+                btn.style.color = '#FFFFFF';
+            }
+        }
+    </script>
+</body>
+</html>

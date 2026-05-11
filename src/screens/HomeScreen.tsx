@@ -28,6 +28,7 @@ import { captureAnalyticsEvent } from "../lib/analytics";
 type HomeScreenProps = {
   currentEvent: CurrentEventValue | null;
   onOpenPeopleFilter?: (status: PersonStatusMode) => void;
+  onOpenEventWrapUp?: () => void;
   showCaptureCoach?: boolean;
   onCaptureCoachDone?: () => void;
 };
@@ -41,6 +42,7 @@ const ACTIVE_SCREEN_STORAGE_KEY = "blackbook.active_screen";
 export function HomeScreen({
   currentEvent,
   onOpenPeopleFilter,
+  onOpenEventWrapUp,
   showCaptureCoach = false,
   onCaptureCoachDone,
 }: HomeScreenProps) {
@@ -86,6 +88,11 @@ export function HomeScreen({
     return {
       total: linkedPeople.length,
       outstanding: linkedPeople.filter((person) => person.followUpState === "dueToday" || person.followUpState === "overdue").length,
+      missingNextStep: linkedPeople.filter((person) => !person.nextStep.trim()).length,
+      missingReminder: linkedPeople.filter((person) => !person.nextFollowUpAt).length,
+      readyToFollowUp: linkedPeople.filter(
+        (person) => person.nextStep.trim() && person.nextFollowUpAt && person.preferredChannel
+      ).length,
     };
   }, [currentEvent, people]);
 
@@ -309,10 +316,12 @@ export function HomeScreen({
         >
           <View style={styles.headerRow}>
             <View style={styles.headerCopy}>
-              <Typography variant="caption">Today</Typography>
-              <Typography variant="h1">Morning queue</Typography>
+              <Typography variant="caption">{currentEvent ? "Live event" : "Today"}</Typography>
+              <Typography variant="h1">{currentEvent ? "Event assistant" : "Morning queue"}</Typography>
               <Typography variant="body" style={styles.sectionMeta}>
-                Quick follow-ups before the day gets loud.
+                {currentEvent
+                  ? "Capture conversations now, then close the loop before context fades."
+                  : "Quick follow-ups before the day gets loud."}
               </Typography>
             </View>
           </View>
@@ -336,6 +345,21 @@ export function HomeScreen({
                   ? `${currentEventSummary.total} people added · ${currentEventSummary.outstanding} still need follow-up. New captures will keep tagging to this event until you exit event mode.`
                   : "Any person saved now will be attached to this event until you exit event mode."}
               </Typography>
+              {currentEventSummary ? (
+                <Typography variant="caption" style={styles.sectionMeta}>
+                  Ready: {currentEventSummary.readyToFollowUp} - Cleanup: {currentEventSummary.missingNextStep + currentEventSummary.missingReminder}
+                </Typography>
+              ) : null}
+              <View style={styles.eventActionRow}>
+                <Button label="Capture conversation" onPress={openCapture} fullWidth={false} size="compact" />
+                <Button
+                  label="Wrap up event"
+                  onPress={onOpenEventWrapUp || (() => undefined)}
+                  variant="ghost"
+                  fullWidth={false}
+                  size="compact"
+                />
+              </View>
             </Card>
           ) : null}
 
@@ -348,10 +372,12 @@ export function HomeScreen({
           <Card style={styles.heroCard}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
-                  <Typography variant="caption" style={styles.heroCaption}>Pulse</Typography>
+                  <Typography variant="caption" style={styles.heroCaption}>{currentEvent ? "Outcome queue" : "Pulse"}</Typography>
                   <Typography variant="h2" style={styles.heroHeading}>Today’s relationship queue</Typography>
                   <Typography variant="body" style={styles.heroMeta}>
-                    Due and overdue follow-ups first, with shortcuts into the wider list.
+                    {currentEvent
+                      ? "See who is ready, what needs cleanup, and what follow-ups are already slipping."
+                      : "Due and overdue follow-ups first, with shortcuts into the wider list."}
                   </Typography>
                 </View>
               {waitingOnYouCount ? (
@@ -370,7 +396,7 @@ export function HomeScreen({
                 }}
               >
                 <Typography variant="h2" style={styles.heroMetric}>{people.length}</Typography>
-                <Typography variant="caption" style={styles.heroCaption}>All contacts</Typography>
+                <Typography variant="caption" style={styles.heroCaption}>{currentEvent ? "Total contacts" : "All contacts"}</Typography>
                 <Typography variant="caption" style={styles.tapCue}>Tap to view</Typography>
               </Pressable>
               <Pressable
@@ -381,7 +407,7 @@ export function HomeScreen({
                 }}
               >
                 <Typography variant="h2" style={styles.heroMetric}>{contactedTodayPeople.length}</Typography>
-                <Typography variant="caption" style={styles.heroCaption}>Contacted today</Typography>
+                <Typography variant="caption" style={styles.heroCaption}>{currentEvent ? "Captured today" : "Contacted today"}</Typography>
                 <Typography variant="caption" style={styles.tapCue}>Tap to view</Typography>
               </Pressable>
               <Pressable
@@ -392,7 +418,7 @@ export function HomeScreen({
                 }}
               >
                 <Typography variant="h2" style={styles.heroMetric}>{nudgeCount}</Typography>
-                <Typography variant="caption" style={styles.heroCaption}>Needs attention</Typography>
+                <Typography variant="caption" style={styles.heroCaption}>Needs follow-up</Typography>
                 <Typography variant="caption" style={styles.tapCue}>Tap to view</Typography>
               </Pressable>
             </View>
@@ -554,6 +580,12 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
+  },
+  eventActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingTop: 4,
   },
   liveBadge: {
     alignSelf: "flex-start",

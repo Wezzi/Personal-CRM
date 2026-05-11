@@ -43,7 +43,15 @@ type DraftPreviewDestination = "whatsapp" | "linkedin";
 type UpdateInteractionType = "met" | "called" | "emailed" | "messaged" | "followedUp" | "introduced";
 type UpdateStatus = "warm" | "needsAction" | "waiting" | "doneForNow";
 type PeopleView = "needsFollowUp" | "recentlyMet" | "allContacts";
-type FollowUpOutcome = "Sent" | "Replied" | "No response" | "Converted" | "Not relevant";
+type FollowUpOutcome =
+  | "Sent"
+  | "Replied"
+  | "Meeting booked"
+  | "Intro made"
+  | "Opportunity created"
+  | "Converted"
+  | "No response"
+  | "Not relevant";
 type FollowUpChannelAction = "whatsapp" | "linkedin" | "email" | "copy";
 export type PersonStatusMode = "all" | "today" | "recent" | "stale";
 
@@ -1134,10 +1142,18 @@ export function PersonProfileScreen({
       await createInteraction({
         userId,
         personId: person.id,
-        rawNote: `Follow-up outcome: ${outcome}.\nNext step: ${outcome === "No response" ? "Try again later" : "Review relationship status"}`,
+      rawNote: `Follow-up outcome: ${outcome}.\nNext step: ${outcome === "No response" ? "Try again later" : "Review relationship status"}`,
       });
 
-      if (outcome === "Sent" || outcome === "Replied" || outcome === "Converted" || outcome === "Not relevant") {
+    if (
+      outcome === "Sent" ||
+      outcome === "Replied" ||
+      outcome === "Meeting booked" ||
+      outcome === "Intro made" ||
+      outcome === "Opportunity created" ||
+      outcome === "Converted" ||
+      outcome === "Not relevant"
+    ) {
         await markPersonContactedToday(userId, person.id);
       }
 
@@ -2216,13 +2232,13 @@ export function PersonProfileScreen({
                     </View>
                     <View style={styles.confirmActions}>
                       <Button label="Mark sent" onPress={() => void logFollowUpOutcome("Sent", followUpPerson)} fullWidth={false} size="compact" />
-                      {(["Sent", "Replied", "No response", "Converted", "Not relevant"] as FollowUpOutcome[]).map((outcome) => (
+                      {(["Sent", "Replied", "Meeting booked", "Intro made", "Opportunity created", "No response", "Converted", "Not relevant"] as FollowUpOutcome[]).map((outcome) => (
                         outcome === "Sent" ? null : (
                         <Button
                           key={outcome}
                           label={outcome}
                           onPress={() => void logFollowUpOutcome(outcome, followUpPerson)}
-                          variant={outcome === "Converted" ? "primary" : "ghost"}
+                          variant={outcome === "Converted" || outcome === "Meeting booked" || outcome === "Opportunity created" ? "primary" : "ghost"}
                           fullWidth={false}
                           size="compact"
                         />

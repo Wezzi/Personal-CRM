@@ -708,7 +708,7 @@ export function EventScreen({
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={[styles.headerRow, isCompactLayout ? styles.headerRowCompact : null]}>
             <View style={styles.headerCopy}>
-              <Typography variant="h1">Events</Typography>
+              <Typography variant="h1">Event workspace</Typography>
             </View>
             <Button
               label="Add event"
@@ -843,7 +843,7 @@ export function EventScreen({
                   size="compact"
                 />
                 <Button
-                  label="Copy Slack Canvas"
+                  label="Copy event recap"
                   onPress={() => void handleCopySlackCanvas(selectedEvent)}
                   variant="ghost"
                   fullWidth={false}
@@ -852,7 +852,7 @@ export function EventScreen({
                 />
                 {canDirectSlackCanvas ? (
                   <Button
-                    label="Create Slack Canvas"
+                    label="Send to Slack"
                     onPress={() => void handleExportSlackCanvas(selectedEvent)}
                     variant="ghost"
                     fullWidth={false}
@@ -862,7 +862,7 @@ export function EventScreen({
                 ) : null}
                 {canExportCsv ? (
                   <Button
-                    label="Export CSV"
+                    label="Export event CSV"
                     onPress={() => void handleExportCsv(selectedEvent)}
                     variant="ghost"
                     fullWidth={false}
@@ -872,7 +872,7 @@ export function EventScreen({
                 ) : null}
                 {canManageCampaignLinks ? (
                   <Button
-                    label="Copy campaign link"
+                    label="Copy pilot link"
                     onPress={() => void handleCopyCampaignLink(selectedEvent)}
                     variant="ghost"
                     fullWidth={false}

@@ -94,8 +94,11 @@ const preferredChannelOptions: Array<{ label: string; value: PreferredChannel }>
 const goalTagOptions = [
   "Business Opportunity",
   "Potential Client",
+  "Meeting Booked",
+  "Intro",
   "New Hire",
   "Partner",
+  "Sponsor",
   "Interesting",
   "Other",
 ] as const;
@@ -805,10 +808,10 @@ export function CaptureModal({
           >
             <View style={styles.headerRow}>
               <View style={styles.headerCopy}>
-                <Typography variant="caption">Capture</Typography>
-                <Typography variant="h1">{title}</Typography>
+                <Typography variant="caption">Event capture</Typography>
+                <Typography variant="h1">{title === "Add Person" ? "Capture conversation" : title}</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  Capture quickly now, tidy the details second.
+                  Save the useful context first. Contact details can be cleaned up after the room calms down.
                 </Typography>
               </View>
               <Pressable onPress={handleClose} hitSlop={12} style={styles.closePill}>
@@ -832,7 +835,7 @@ export function CaptureModal({
                 <View style={styles.sectionIntro}>
                   <Typography variant="caption">Quick capture</Typography>
                   <Typography variant="body" style={styles.helperText}>
-                    Choose the fastest way to get this person into Pulse.
+                    Paste, speak, or scan when speed matters. Everything lands back in this review form.
                   </Typography>
                 </View>
 
@@ -934,7 +937,7 @@ export function CaptureModal({
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Who + why</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  Just enough context to remember why this person matters.
+                  The minimum useful record: who they are, why they matter, and what outcome they connect to.
                 </Typography>
               </View>
 
@@ -974,7 +977,7 @@ export function CaptureModal({
               </View>
 
               <View style={styles.chipSection}>
-                <Typography variant="caption">Goal</Typography>
+                <Typography variant="caption">Outcome goal</Typography>
                 <View style={styles.chipRow}>
                   {goalTagOptions.map((tag) => (
                     <Button
@@ -995,7 +998,7 @@ export function CaptureModal({
               </View>
 
               <View style={styles.chipSection}>
-                <Typography variant="caption">Preferred contact method</Typography>
+                <Typography variant="caption">Best follow-up channel</Typography>
                 <View style={styles.chipRow}>
                   {preferredChannelOptions.map((option) => (
                     <Button
@@ -1026,7 +1029,7 @@ export function CaptureModal({
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Next step</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  The small action or messy thought you do not want to lose.
+                  The promised action, open loop, or messy thought you do not want to lose.
                 </Typography>
               </View>
 
@@ -1040,6 +1043,13 @@ export function CaptureModal({
                   onChangeText={(value) => updateField("nextStep", value)}
                   multiline
                 />
+              </View>
+
+              <View style={styles.sectionIntro}>
+                <Typography variant="caption">Contact details</Typography>
+                <Typography variant="body" style={styles.helperText}>
+                  Helpful if you have them now. Safe to leave blank and tidy later.
+                </Typography>
               </View>
 
               <View style={styles.twoColumnRow}>

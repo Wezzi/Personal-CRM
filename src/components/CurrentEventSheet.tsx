@@ -155,14 +155,14 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.headerRow}>
-            <Typography variant="h1">Set Current Event</Typography>
+            <Typography variant="h1">Start event assistant</Typography>
             <Button label="Close" onPress={onClose} variant="ghost" fullWidth={false} size="compact" />
           </View>
 
           <Card style={styles.heroCard}>
             <Typography variant="caption">Current mode</Typography>
             <Typography variant="body" style={styles.heroText}>
-              Set this once and every new person or interaction will automatically inherit the same event context until you end the event.
+              Set the room once. Every new person you capture will inherit this event context until you finish event mode.
             </Typography>
           </Card>
 

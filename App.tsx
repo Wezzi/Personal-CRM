@@ -815,6 +815,7 @@ useEffect(() => {
           <HomeScreen
             currentEvent={currentEvent}
             onOpenPeopleFilter={handleOpenPeopleFilter}
+            onOpenEventWrapUp={() => setEventWrapUpOpen(true)}
             showCaptureCoach={tutorialStep === "capture"}
             onCaptureCoachDone={() => void finishTutorial()}
           />
