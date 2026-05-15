@@ -9,6 +9,8 @@ export type InviteAttribution = {
   eventCategory?: string;
   eventDate?: string;
   userRole?: string;
+  accessMode?: string;
+  exportCsv?: boolean;
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
@@ -89,6 +91,8 @@ export async function captureInviteAttributionFromUrl() {
     eventCategory: params.get("event_category") || params.get("eventCategory") || undefined,
     eventDate: params.get("event_date") || params.get("eventDate") || undefined,
     userRole: params.get("user_role") || params.get("role") || undefined,
+    accessMode: params.get("access") || params.get("access_mode") || undefined,
+    exportCsv: params.get("export_csv") === "true" || params.get("exportCsv") === "true" || undefined,
     utmSource: params.get("utm_source") || undefined,
     utmMedium: params.get("utm_medium") || undefined,
     utmCampaign: params.get("utm_campaign") || undefined,
@@ -131,6 +135,8 @@ export async function identifyAnalyticsUser(userId: string, properties: Analytic
       event_category: attribution.eventCategory,
       event_date: attribution.eventDate,
       user_role: attribution.userRole,
+      access_mode: attribution.accessMode,
+      export_csv: attribution.exportCsv,
       utm_source: attribution.utmSource,
       utm_medium: attribution.utmMedium,
       utm_campaign: attribution.utmCampaign,
@@ -153,6 +159,8 @@ export async function captureAnalyticsEvent(name: string, properties: AnalyticsP
       event_category: attribution.eventCategory,
       event_date: attribution.eventDate,
       user_role: attribution.userRole,
+      access_mode: attribution.accessMode,
+      export_csv: attribution.exportCsv,
       utm_source: attribution.utmSource,
       utm_medium: attribution.utmMedium,
       utm_campaign: attribution.utmCampaign,

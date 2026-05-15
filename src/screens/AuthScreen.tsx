@@ -207,6 +207,9 @@ export function AuthScreen({
               disabled={isBusy}
               loading={isGoogleBusy}
             />
+            <Typography variant="caption" style={styles.betaTermsText}>
+              By signing in, you agree to our Private Beta Terms. This is a confidential testing environment. Do not enter highly sensitive client data.
+            </Typography>
           </View>
 
           <View style={styles.metaRow}>
@@ -326,6 +329,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   actionStack: {
     gap: 12,
+  },
+  betaTermsText: {
+    color: colors.textTertiary,
+    lineHeight: 16,
   },
   metaRow: {
     flexDirection: "row",

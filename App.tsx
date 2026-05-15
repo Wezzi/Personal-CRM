@@ -185,6 +185,24 @@ function buildMagicCurrentEvent(attribution: InviteAttribution): CurrentEventVal
   };
 }
 
+function applyInviteAccess(access: FeatureAccess, attribution: InviteAttribution): FeatureAccess {
+  const isVipInvite = attribution.accessMode === "vip" || attribution.userRole === "program_manager";
+  const shouldExportCsv = attribution.exportCsv || isVipInvite;
+
+  if (!isVipInvite && !shouldExportCsv) {
+    return access;
+  }
+
+  return {
+    accessMode: access.accessMode === "admin" ? "admin" : isVipInvite ? "vip" : access.accessMode,
+    features: {
+      ...access.features,
+      campaignMode: access.features.campaignMode || isVipInvite,
+      exportCsv: access.features.exportCsv || Boolean(shouldExportCsv),
+    },
+  };
+}
+
 function AppShell() {
   const { width } = useWindowDimensions();
   const { colors, preference, resolvedScheme, setPreference } = useTheme();
@@ -253,9 +271,12 @@ useEffect(() => {
   let isMounted = true;
 
   async function hydrateFeatureAccess() {
-    const access = await getFeatureAccessForUser(activeUser);
+    const [access, attribution] = await Promise.all([
+      getFeatureAccessForUser(activeUser),
+      captureInviteAttributionFromUrl(),
+    ]);
     if (isMounted) {
-      setFeatureAccess(access);
+      setFeatureAccess(applyInviteAccess(access, attribution));
     }
   }
 
@@ -692,7 +713,12 @@ useEffect(() => {
         >
           <View style={styles.compactTopRow}>
             <View style={styles.compactBrandWrap}>
-              <Typography variant="caption">Welcome, {welcomeName}</Typography>
+              <View style={styles.brandBadgeRow}>
+                <Typography variant="caption">Blackbook</Typography>
+                <View style={styles.betaBadge}>
+                  <Typography variant="caption" style={styles.betaBadgeText}>Private Beta</Typography>
+                </View>
+              </View>
               <Typography variant="h2">{screen === "home" ? "Home" : screen === "event" ? "Events" : "People"}</Typography>
             </View>
             <View style={styles.compactTopActions}>
@@ -728,7 +754,12 @@ useEffect(() => {
       ) : (
         <View style={styles.topBar}>
           <View style={styles.brandCluster}>
-            <Typography variant="caption">Welcome, {welcomeName}</Typography>
+            <View style={styles.brandBadgeRow}>
+              <Typography variant="caption">Blackbook</Typography>
+              <View style={styles.betaBadge}>
+                <Typography variant="caption" style={styles.betaBadgeText}>Private Beta</Typography>
+              </View>
+            </View>
             <Button
               label="Home"
               onPress={() => setScreen("home")}
@@ -851,6 +882,7 @@ useEffect(() => {
       <EventWrapUpSheet
         visible={isEventWrapUpOpen}
         event={currentEvent}
+        canExportCsv={featureAccess.features.exportCsv}
         onClose={() => setEventWrapUpOpen(false)}
         onExitEventMode={exitCurrentEventMode}
       />
@@ -996,6 +1028,9 @@ useEffect(() => {
               </View>
               <Button label="Report a bug" onPress={handleReportBug} />
               <Button label="Suggest a feature" onPress={handleSuggestFeature} variant="ghost" />
+              <Typography variant="caption" style={styles.legalText}>
+                © 2026 Blackbook Pulse. All Rights Reserved.Strictly for informational and testing purposes only.
+              </Typography>
             </View>
           </View>
         </SafeAreaView>
@@ -1025,6 +1060,24 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   brandCluster: {
     gap: 6,
+  },
+  brandBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  betaBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  betaBadgeText: {
+    color: colors.textSecondary,
+    letterSpacing: 0,
   },
   switcherCompact: {
     flexWrap: "wrap",
@@ -1168,6 +1221,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   themeMeta: {
     color: colors.textSecondary,
+  },
+  legalText: {
+    color: colors.textTertiary,
+    lineHeight: 16,
   },
   accountMenuOverlay: {
     flex: 1,
