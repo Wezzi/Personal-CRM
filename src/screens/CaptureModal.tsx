@@ -48,6 +48,7 @@ import {
 import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 export type QuickCaptureMethod = "manual" | "paste" | "voice" | "scan";
+type CaptureStage = "capture" | "review" | "contact";
 
 export type ParsedPersonDraft = {
   name: string;
@@ -396,6 +397,7 @@ export function CaptureModal({
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   const [draft, setDraft] = useState<ParsedPersonDraft>(emptyDraft);
+  const [captureStage, setCaptureStage] = useState<CaptureStage>("capture");
   const [isFollowUpManuallySet, setFollowUpManuallySet] = useState(false);
   const [activeMethod, setActiveMethod] = useState<QuickCaptureMethod>(initialMethod);
   const [pasteInput, setPasteInput] = useState("");
@@ -405,6 +407,7 @@ export function CaptureModal({
   const [savedDraftMessage, setSavedDraftMessage] = useState("");
   const [isGeneratingSavedDraftMessage, setGeneratingSavedDraftMessage] = useState(false);
   const [extractionNotice, setExtractionNotice] = useState<ExtractionNotice | null>(null);
+  const [captureReadyMessage, setCaptureReadyMessage] = useState("");
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -480,6 +483,8 @@ export function CaptureModal({
       setIsQrScannerVisible(false);
       setSavedDraftForNextAction(null);
       setExtractionNotice(null);
+      setCaptureReadyMessage("");
+      setCaptureStage(showQuickCapture ? "capture" : "review");
       setHasHydratedSavedDraft(true);
     }
 
@@ -488,7 +493,7 @@ export function CaptureModal({
     return () => {
       isMounted = false;
     };
-  }, [initialDraft, initialMethod, lockedEvent, visible]);
+  }, [initialDraft, initialMethod, lockedEvent, showQuickCapture, visible]);
 
   useEffect(() => {
     if (!visible || !draftStorageKey || !hasHydratedSavedDraft || (initialDraft && !autosaveWithInitialDraft)) {
@@ -586,6 +591,7 @@ export function CaptureModal({
 
     if (method === "scan") {
       setIsScanChoiceVisible(true);
+      setCaptureStage("contact");
     }
   }
 
@@ -651,6 +657,7 @@ export function CaptureModal({
       });
 
       setActiveMethod("manual");
+      setCaptureStage("review");
     } catch (error) {
       setVoiceError(
         error instanceof Error ? error.message : "Voice transcription failed."
@@ -725,6 +732,7 @@ export function CaptureModal({
       });
 
       setActiveMethod("manual");
+      setCaptureStage("contact");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Business card scan failed.";
       setScanError(message);
@@ -783,6 +791,7 @@ export function CaptureModal({
       fields: extractedFields.length ? extractedFields : ["linkedinUrl"],
     });
     setActiveMethod("manual");
+    setCaptureStage("contact");
     setIsQrScannerVisible(false);
   }
 
@@ -811,6 +820,7 @@ export function CaptureModal({
       fields: extractedFields.length ? extractedFields : ["whatMatters"],
     });
     setActiveMethod("manual");
+    setCaptureStage("review");
   }
 
   function handleEventCategoryChange(value: EventCategory) {
@@ -925,6 +935,14 @@ export function CaptureModal({
     setSavedDraftMessage("");
     setGeneratingSavedDraftMessage(false);
     setExtractionNotice(null);
+    setCaptureStage("capture");
+  }
+
+  function returnToCaptureReady(savedName?: string) {
+    resetForAnotherCapture();
+    if (savedName?.trim()) {
+      setCaptureReadyMessage(`${savedName.trim()} saved.`);
+    }
   }
 
   async function handleSave(addAnother = false) {
@@ -1029,6 +1047,7 @@ export function CaptureModal({
       if (preferredChannel === "whatsapp" && savedDraftForNextAction.phoneNumber.trim()) {
         const phone = normalizePhoneForUrl(savedDraftForNextAction.phoneNumber);
         await Linking.openURL(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`);
+        returnToCaptureReady(savedDraftForNextAction.name);
         return;
       }
 
@@ -1039,6 +1058,7 @@ export function CaptureModal({
         await Linking.openURL(
           `mailto:${encodeURIComponent(savedDraftForNextAction.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`
         );
+        returnToCaptureReady(savedDraftForNextAction.name);
         return;
       }
 
@@ -1046,19 +1066,23 @@ export function CaptureModal({
         await Clipboard.setStringAsync(message);
         await Linking.openURL(savedDraftForNextAction.linkedinUrl);
         Alert.alert("Message copied", "Paste the draft into LinkedIn when the profile opens.");
+        returnToCaptureReady(savedDraftForNextAction.name);
         return;
       }
 
       if (preferredChannel === "phone" && savedDraftForNextAction.phoneNumber.trim()) {
         await Clipboard.setStringAsync(message);
         await Linking.openURL(`sms:${savedDraftForNextAction.phoneNumber}?body=${encodeURIComponent(message)}`);
+        returnToCaptureReady(savedDraftForNextAction.name);
         return;
       }
 
       await handleCopySavedDraftMessage();
+      returnToCaptureReady(savedDraftForNextAction.name);
     } catch {
       await Clipboard.setStringAsync(message);
       Alert.alert("Message copied", "Could not open the app, so the draft is copied instead.");
+      returnToCaptureReady(savedDraftForNextAction.name);
     }
   }
 
@@ -1080,13 +1104,14 @@ export function CaptureModal({
         },
         Platform.OS === "web" ? "ics" : "device"
       );
+      returnToCaptureReady(savedDraftForNextAction.name);
     } catch (error) {
       Alert.alert("Calendar failed", error instanceof Error ? error.message : "Could not add this reminder.");
     }
   }
 
   function handleSavedDraftAddAnother() {
-    resetForAnotherCapture();
+    returnToCaptureReady(savedDraftForNextAction?.name);
   }
 
   function renderPostSaveActions() {
@@ -1146,7 +1171,9 @@ export function CaptureModal({
                 <Typography variant="caption">Event capture</Typography>
                 <Typography variant="h1">{title === "Add Person" ? "Capture conversation" : title}</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  Save the useful context first. Contact details can be cleaned up after the room calms down.
+                  {showQuickCapture
+                    ? "Tell me what just happened. We will turn it into a draft you can confirm."
+                    : "Correct the useful context and save the clean version."}
                 </Typography>
               </View>
               <Pressable onPress={handleClose} hitSlop={12} style={styles.closePill}>
@@ -1167,59 +1194,66 @@ export function CaptureModal({
 
             {savedDraftForNextAction ? renderPostSaveActions() : (
               <>
-            {showQuickCapture ? (
-              <Card style={styles.sectionCard}>
+            {showQuickCapture && captureStage === "capture" ? (
+              <Card style={[styles.sectionCard, styles.voiceFirstCard]}>
+                {captureReadyMessage ? (
+                  <View style={styles.savedInlineBanner}>
+                    <Typography variant="caption" style={styles.savedInlineText}>Saved</Typography>
+                    <Typography variant="body" style={styles.savedInlineText}>{captureReadyMessage} Ready for the next person.</Typography>
+                  </View>
+                ) : null}
                 <View style={styles.sectionIntro}>
-                  <Typography variant="caption">Quick capture</Typography>
+                  <Typography variant="caption">{lockedEvent ? lockedEvent.name : "Capture"}</Typography>
+                  <Typography variant="h1">Tell me what just happened.</Typography>
                   <Typography variant="body" style={styles.helperText}>
-                    Speak the context, scan contact details, or type one messy note. Everything becomes a draft you can correct.
+                    Say who you met, why they matter, and what should happen next.
                   </Typography>
                 </View>
 
-                <View style={styles.chipRow}>
+                <Pressable
+                  style={[styles.speakButton, recorderState.isRecording ? styles.speakButtonActive : null]}
+                  onPress={
+                    recorderState.isRecording
+                      ? () => void handleStopVoiceCapture()
+                      : () => {
+                          handleMethodPress("voice");
+                          void handleStartVoiceCapture();
+                        }
+                  }
+                  disabled={isTranscribing}
+                >
+                  <Typography variant="h1" style={styles.speakIcon}>
+                    {isTranscribing ? "..." : recorderState.isRecording ? "Stop" : "🎤"}
+                  </Typography>
+                  <Typography variant="h2" style={styles.speakLabel}>
+                    {isTranscribing ? "Transcribing..." : recorderState.isRecording ? "Tap to finish" : "Hold to speak"}
+                  </Typography>
+                  <Typography variant="body" style={styles.speakHelper}>
+                    “Met Sarah from Acme, partnership lead, follow up next week.”
+                  </Typography>
+                </Pressable>
+
+                {voiceError ? (
+                  <Typography variant="caption" style={styles.errorText}>
+                    {voiceError}
+                  </Typography>
+                ) : null}
+
+                <View style={styles.secondaryCaptureRow}>
+                  <Button
+                    label="Scan card/badge"
+                    onPress={() => handleMethodPress("scan")}
+                    variant="ghost"
+                    fullWidth={false}
+                    size="compact"
+                  />
                   <Button
                     label="Quick note"
-                    onPress={() => handleMethodPress("paste")}
-                    variant={activeMethod === "paste" ? "primary" : "ghost"}
-                    fullWidth={false}
-                    size="compact"
-                  />
-                  <Button
-                    label={
-                      isTranscribing
-                        ? "Transcribing..."
-                        : recorderState.isRecording
-                        ? "Stop recording"
-                        : "Voice"
-                    }
-                    onPress={
-                      recorderState.isRecording
-                        ? handleStopVoiceCapture
-                        : async () => {
-                            handleMethodPress("voice");
-                            await handleStartVoiceCapture();
-                          }
-                    }
-                    variant={
-                      recorderState.isRecording || activeMethod === "voice"
-                        ? "primary"
-                        : "ghost"
-                    }
-                    fullWidth={false}
-                    size="compact"
-                    disabled={isTranscribing}
-                  />
-                  <Button
-                    label="Scan"
-                    onPress={() => handleMethodPress("scan")}
-                    variant={activeMethod === "scan" ? "primary" : "ghost"}
-                    fullWidth={false}
-                    size="compact"
-                  />
-                  <Button
-                    label="Manual"
-                    onPress={() => handleMethodPress("manual")}
-                    variant={activeMethod === "manual" ? "primary" : "ghost"}
+                    onPress={() => {
+                      handleMethodPress("paste");
+                      setCaptureStage("review");
+                    }}
+                    variant="ghost"
                     fullWidth={false}
                     size="compact"
                   />
@@ -1244,44 +1278,17 @@ export function CaptureModal({
                     <Button label="Extract draft" onPress={handlePasteParse} />
                   </View>
                 ) : null}
-
-                {activeMethod === "voice" ? (
-                  <View style={styles.placeholderPanel}>
-                    <Typography variant="h2">{recorderState.isRecording ? "Listening..." : "Voice fills the context"}</Typography>
-                    <Typography variant="body" style={styles.helperText}>
-                      Say who they are, why they matter, what you promised, and when to follow up. The fields below will update after transcription.
-                    </Typography>
-                    {voiceError ? (
-                      <Typography variant="caption" style={styles.errorText}>
-                        {voiceError}
-                      </Typography>
-                    ) : null}
-                  </View>
-                ) : null}
-
-                {activeMethod === "scan" ? (
-                  <View style={styles.placeholderPanel}>
-                    <Typography variant="h2">Scan fills contact details</Typography>
-                    <Typography variant="body" style={styles.helperText}>
-                      Use this for QR codes, badges, business cards, LinkedIn, email, and phone. Add the relationship context after.
-                    </Typography>
-                    {scanError ? (
-                      <Typography variant="caption" style={styles.errorText}>
-                        {scanError}
-                      </Typography>
-                    ) : null}
-                  </View>
-                ) : null}
               </Card>
             ) : null}
 
-            {renderExtractionNotice()}
+            {captureStage !== "capture" ? renderExtractionNotice() : null}
 
+            {(!showQuickCapture || captureStage === "review" || captureStage === "contact") ? (
             <Card style={styles.sectionCard}>
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Who + why</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  The minimum useful record: who they are, why they matter, and what outcome they connect to.
+                  Review the draft. Correct anything that feels off.
                 </Typography>
               </View>
 
@@ -1342,6 +1349,8 @@ export function CaptureModal({
               </View>
 
               <View style={[styles.chipSection, extractedFieldSet.has("preferredChannel") ? styles.extractedSection : null]}>
+                {(!showQuickCapture || captureStage === "contact") ? (
+                <>
                 <Typography variant="caption">Best follow-up channel</Typography>
                 <View style={styles.chipRow}>
                   {preferredChannelOptions.map((option) => (
@@ -1366,9 +1375,13 @@ export function CaptureModal({
                     autoCorrect={false}
                   />
                 ) : null}
+                </>
+                ) : null}
               </View>
             </Card>
+            ) : null}
 
+            {(!showQuickCapture || captureStage === "review" || captureStage === "contact") ? (
             <Card style={styles.sectionCard}>
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Next step</Typography>
@@ -1377,6 +1390,7 @@ export function CaptureModal({
                 </Typography>
               </View>
 
+              {(!showQuickCapture || captureStage === "review") ? (
               <View style={styles.fieldBlock}>
                 <Typography variant="caption">Next step / brain dump</Typography>
                 <TextInput
@@ -1388,13 +1402,56 @@ export function CaptureModal({
                   multiline
                 />
               </View>
+              ) : null}
 
+              {(!showQuickCapture || captureStage === "contact") ? (
+              <>
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Contact details</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  Helpful if you have them now. Safe to leave blank and tidy later.
+                  How should you reach them?
                 </Typography>
               </View>
+
+              <View style={styles.secondaryCaptureRow}>
+                <Button
+                  label="Scan card/badge"
+                  onPress={() => handleMethodPress("scan")}
+                  fullWidth={false}
+                  size="compact"
+                />
+                <Button
+                  label="Paste LinkedIn"
+                  onPress={() => handleMethodPress("paste")}
+                  variant="ghost"
+                  fullWidth={false}
+                  size="compact"
+                />
+                <Button
+                  label="Add manually"
+                  onPress={() => handleMethodPress("manual")}
+                  variant="ghost"
+                  fullWidth={false}
+                  size="compact"
+                />
+              </View>
+
+              {activeMethod === "paste" ? (
+                <View style={styles.capturePanel}>
+                  <Typography variant="caption">Paste LinkedIn or copied contact text</Typography>
+                  <TextInput
+                    placeholder="linkedin.com/in/sarah or an email signature"
+                    placeholderTextColor={colors.textTertiary}
+                    style={[styles.fieldInput, styles.textAreaInput]}
+                    value={pasteInput}
+                    onChangeText={setPasteInput}
+                    multiline
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <Button label="Extract contact details" onPress={handlePasteParse} />
+                </View>
+              ) : null}
 
               <View style={styles.twoColumnRow}>
                 <View style={styles.metaInputBlock}>
@@ -1434,13 +1491,17 @@ export function CaptureModal({
                   />
                 </View>
               </View>
+              </>
+              ) : null}
             </Card>
+            ) : null}
 
+            {(!showQuickCapture || captureStage === "review" || captureStage === "contact") ? (
             <Card style={styles.sectionCard}>
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Follow-up</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  Pick a sensible reminder. Add it to calendar from the person card after saving.
+                  Suggested, not required. Accept it now or change it later.
                 </Typography>
               </View>
 
@@ -1522,13 +1583,7 @@ export function CaptureModal({
                 ) : null}
               </View>
             </Card>
-
-            <Card style={[styles.sectionCard, styles.previewCard]}>
-              <Typography variant="caption">Draft preview</Typography>
-              <Typography variant="body" style={styles.previewText}>
-                {sentencePreview}
-              </Typography>
-            </Card>
+            ) : null}
               </>
             )}
           </ScrollView>
@@ -1536,11 +1591,24 @@ export function CaptureModal({
           {!savedDraftForNextAction ? (
             <View style={styles.footerWrap}>
             <View style={styles.footerButtons}>
+              {showQuickCapture && captureStage === "capture" ? (
+                <Button label="Close" onPress={handleClose} variant="ghost" />
+              ) : null}
+              {showQuickCapture && captureStage === "review" ? (
+                <>
+                  <Button label="Confirm" onPress={() => setCaptureStage("contact")} disabled={!canSave} />
+                  <Button label="Start over" onPress={resetForAnotherCapture} variant="ghost" />
+                </>
+              ) : null}
+              {(!showQuickCapture || captureStage === "contact") ? (
+                <>
               <Button label={saveLabel} onPress={() => void handleSave(false)} loading={isSaving} disabled={!canSave} />
               {showSaveAndAddAnother ? (
                 <Button label="Save & Add Another" onPress={() => void handleSave(true)} loading={isSaving} disabled={!canSave} variant="ghost" />
               ) : null}
               <Button label="Cancel" onPress={handleClose} variant="ghost" />
+                </>
+              ) : null}
             </View>
           </View>
           ) : null}
@@ -1633,8 +1701,51 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   sectionCard: {
     gap: 16,
   },
+  voiceFirstCard: {
+    gap: 18,
+  },
   sectionIntro: {
     gap: 6,
+  },
+  speakButton: {
+    minHeight: 220,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: colors.primaryAction,
+    backgroundColor: colors.primaryAction,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    gap: 10,
+  },
+  speakButtonActive: {
+    backgroundColor: colors.primaryActionHover,
+  },
+  speakIcon: {
+    color: colors.onPrimary,
+  },
+  speakLabel: {
+    color: colors.onPrimary,
+  },
+  speakHelper: {
+    color: colors.onPrimary,
+    textAlign: "center",
+  },
+  secondaryCaptureRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  savedInlineBanner: {
+    borderRadius: 18,
+    backgroundColor: colors.successSoft,
+    borderWidth: 1,
+    borderColor: colors.primaryAction,
+    padding: 12,
+    gap: 4,
+  },
+  savedInlineText: {
+    color: colors.textPrimary,
   },
   lockedEventCard: {
     backgroundColor: colors.surfaceMuted,
