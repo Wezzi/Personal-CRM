@@ -4,10 +4,13 @@ import { Modal, SafeAreaView, ScrollView, StyleSheet, TextInput, View, useWindow
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { EVENT_CATEGORY_OPTIONS, EventCategory, formatCategoryLabel } from "../lib/crm";
+import { LumaEventSuggestion, suggestLumaEvent } from "../lib/lumaEvents";
 import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
 import { Typography } from "./ui/Typography";
+
+const LUMA_EVENT_SOURCE_STORAGE_KEY = "blackbook.luma_event_source_url";
 
 export type CurrentEventValue = {
   name: string;
@@ -49,6 +52,19 @@ function getRelativeDateInputValue(offsetDays: number) {
   return toDateInputValue(date);
 }
 
+function formatSuggestionTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 type CurrentEventDraft = {
   name: string;
   category: EventCategory;
@@ -66,6 +82,10 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
   const [eventDate, setEventDate] = useState("");
   const [customCategoryLabel, setCustomCategoryLabel] = useState("");
   const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
+  const [lumaUrl, setLumaUrl] = useState("");
+  const [lumaSuggestion, setLumaSuggestion] = useState<LumaEventSuggestion | null>(null);
+  const [lumaError, setLumaError] = useState("");
+  const [isCheckingLuma, setIsCheckingLuma] = useState(false);
 
   useEffect(() => {
     if (!visible) {
@@ -97,6 +117,8 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
       setCategory(value?.category ?? draft?.category ?? "networking");
       setEventDate(value?.eventDate ?? draft?.eventDate ?? "");
       setCustomCategoryLabel(value?.customCategoryLabel ?? draft?.customCategoryLabel ?? "");
+      setLumaSuggestion(null);
+      setLumaError("");
       setHasHydratedDraft(true);
     }
 
@@ -122,6 +144,27 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
     void persistDraft();
   }, [category, customCategoryLabel, draftStorageKey, eventDate, hasHydratedDraft, name, visible]);
 
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function hydrateLumaSource() {
+      const savedUrl = await AsyncStorage.getItem(LUMA_EVENT_SOURCE_STORAGE_KEY);
+      if (isMounted && savedUrl) {
+        setLumaUrl(savedUrl);
+      }
+    }
+
+    void hydrateLumaSource();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [visible]);
+
   function handleSave() {
     if (!name.trim()) {
       return;
@@ -137,6 +180,36 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
       eventDate: eventDate.trim() || null,
       customCategoryLabel: category === "other" ? customCategoryLabel.trim() || null : null,
     });
+  }
+
+  async function handleFindLumaEvent() {
+    if (!lumaUrl.trim() || isCheckingLuma) {
+      return;
+    }
+
+    setIsCheckingLuma(true);
+    setLumaError("");
+    setLumaSuggestion(null);
+
+    try {
+      await AsyncStorage.setItem(LUMA_EVENT_SOURCE_STORAGE_KEY, lumaUrl.trim());
+      const suggestion = await suggestLumaEvent(lumaUrl.trim());
+      setLumaSuggestion(suggestion);
+    } catch (error) {
+      setLumaError(error instanceof Error ? error.message : "Could not check that Luma calendar.");
+    } finally {
+      setIsCheckingLuma(false);
+    }
+  }
+
+  function handleUseLumaSuggestion() {
+    if (!lumaSuggestion) {
+      return;
+    }
+
+    setName(lumaSuggestion.event.name);
+    setEventDate(lumaSuggestion.event.eventDate);
+    setCategory("networking");
   }
 
   const quickDateChoices = [
@@ -167,6 +240,60 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
           </Card>
 
           <Card>
+            <Typography variant="caption">Connect your Luma</Typography>
+            <Typography variant="body" style={styles.heroText}>
+              Paste your public Luma calendar URL. If we find an event happening now or soon, we can fill this in for you.
+            </Typography>
+            <TextInput
+              placeholder="https://lu.ma/... or webcal://..."
+              placeholderTextColor={colors.textTertiary}
+              value={lumaUrl}
+              onChangeText={(text) => {
+                setLumaUrl(text);
+                setLumaError("");
+              }}
+              style={styles.input}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.lumaActions}>
+              <Button
+                label={isCheckingLuma ? "Checking..." : "Find event"}
+                onPress={handleFindLumaEvent}
+                disabled={!lumaUrl.trim() || isCheckingLuma}
+                fullWidth={false}
+                size="compact"
+              />
+            </View>
+
+            {lumaSuggestion ? (
+              <View style={styles.suggestionBox}>
+                <Typography variant="caption">
+                  {lumaSuggestion.isActiveNow ? "Looks like you're at" : "Suggested event"}
+                </Typography>
+                <Typography variant="h2" style={styles.suggestionTitle}>{lumaSuggestion.event.name}</Typography>
+                <Typography variant="body" style={styles.suggestionMeta}>
+                  {[
+                    formatSuggestionTime(lumaSuggestion.event.startsAt),
+                    lumaSuggestion.event.location,
+                  ].filter(Boolean).join(" · ")}
+                </Typography>
+                <Typography variant="body" style={styles.suggestionMeta}>
+                  We found {lumaSuggestion.count} event{lumaSuggestion.count === 1 ? "" : "s"} from that calendar.
+                </Typography>
+                <View style={styles.datePillRow}>
+                  <Button label="Use this event" onPress={handleUseLumaSuggestion} fullWidth={false} size="compact" />
+                  <Button label="Not now" onPress={() => setLumaSuggestion(null)} variant="ghost" fullWidth={false} size="compact" />
+                </View>
+              </View>
+            ) : null}
+
+            {lumaError ? (
+              <Typography variant="body" style={styles.errorText}>{lumaError}</Typography>
+            ) : null}
+          </Card>
+
+          <Card>
             <Typography variant="caption">Event name</Typography>
             <TextInput
               placeholder="Sifted Summit"
@@ -174,7 +301,6 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
               value={name}
               onChangeText={setName}
               style={styles.input}
-              autoFocus
             />
 
             <Typography variant="caption" style={styles.labelSpacing}>Event date</Typography>
@@ -300,6 +426,29 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     flexWrap: "wrap",
     gap: 8,
     marginTop: 10,
+  },
+  lumaActions: {
+    alignItems: "flex-start",
+    marginTop: 12,
+  },
+  suggestionBox: {
+    marginTop: 14,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.successSoft,
+    padding: 14,
+  },
+  suggestionTitle: {
+    marginTop: 8,
+  },
+  suggestionMeta: {
+    marginTop: 8,
+    color: colors.textSecondary,
+  },
+  errorText: {
+    marginTop: 12,
+    color: colors.destructive,
   },
   inlineInputTop: {
     marginTop: 16,
