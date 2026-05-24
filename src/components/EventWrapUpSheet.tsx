@@ -114,12 +114,6 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
     return {
 
-      readyToFollowUp: people.filter(
-
-        (person) => person.nextStep.trim() && person.nextFollowUpAt && person.preferredChannel
-
-      ).length,
-
       missingNextStep: people.filter((person) => !person.nextStep.trim()).length,
 
       missingReminder: people.filter((person) => !person.nextFollowUpAt).length,
@@ -130,6 +124,18 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
     };
 
+  }, [people]);
+
+  const peopleYouShouldntForget = useMemo(() => {
+    return people
+      .filter((person) => person.priority === "high" || person.nextStep.trim() || person.whatMatters.trim())
+      .slice(0, 5);
+  }, [people]);
+
+  const incompletePeople = useMemo(() => {
+    return people
+      .filter((person) => !person.nextStep.trim() || !person.nextFollowUpAt || !person.preferredChannel)
+      .slice(0, 5);
   }, [people]);
 
 
@@ -296,7 +302,7 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
               <Typography variant="body" style={styles.metaText}>
 
-                Your assistant checklist before this event turns into forgotten notes.
+                Clarity before this event turns into forgotten notes.
 
               </Typography>
 
@@ -310,7 +316,15 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
-            <View style={styles.summaryGrid}>
+            <View style={styles.sectionBlock}>
+              <View style={styles.sectionHeader}>
+                <Typography variant="caption">What happened</Typography>
+                <Typography variant="body" style={styles.metaText}>
+                  A quick memory of the room, without turning it into a report.
+                </Typography>
+              </View>
+
+              <View style={styles.summaryGrid}>
 
               <Card style={styles.summaryCard}>
 
@@ -322,9 +336,9 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
               <Card style={styles.summaryCard}>
 
-                <Typography variant="h2">{summary.readyToFollowUp}</Typography>
+                <Typography variant="h2">{peopleYouShouldntForget.length}</Typography>
 
-                <Typography variant="caption">Ready to follow up</Typography>
+                <Typography variant="caption">Important connections</Typography>
 
               </Card>
 
@@ -332,34 +346,18 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
                 <Typography variant="h2">{summary.dueOrOverdue}</Typography>
 
-                <Typography variant="caption">At risk now</Typography>
+                <Typography variant="caption">Conversations still open</Typography>
 
               </Card>
 
               <Card style={styles.summaryCard}>
 
-                <Typography variant="h2">{summary.missingReminder}</Typography>
+                <Typography variant="h2">{incompletePeople.length}</Typography>
 
-                <Typography variant="caption">Need reminder</Typography>
-
-              </Card>
-
-              <Card style={styles.summaryCard}>
-
-                <Typography variant="h2">{summary.missingNextStep}</Typography>
-
-                <Typography variant="caption">Need next step</Typography>
+                <Typography variant="caption">Unresolved opportunities</Typography>
 
               </Card>
-
-              <Card style={styles.summaryCard}>
-
-                <Typography variant="h2">{summary.missingChannel}</Typography>
-
-                <Typography variant="caption">Need channel</Typography>
-
-              </Card>
-
+              </View>
             </View>
 
 
@@ -380,15 +378,85 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
 
 
+            {!isLoading && peopleYouShouldntForget.length ? (
+
+              <View style={styles.sectionBlock}>
+
+                <View style={styles.sectionHeader}>
+                  <Typography variant="caption">People you should not forget</Typography>
+                  <Typography variant="body" style={styles.metaText}>
+                    Preserved opportunity, not another list to manage.
+                  </Typography>
+                </View>
+
+                {peopleYouShouldntForget.map((person) => (
+                  <Card key={person.id} style={styles.personCard}>
+                    <View style={styles.personHeader}>
+                      <View style={styles.personCopy}>
+                        <Typography variant="h2">{person.name}</Typography>
+                        <Typography variant="caption">
+                          {[person.company, person.tags[0] || person.relationshipStatus].filter(Boolean).join(" · ")}
+                        </Typography>
+                      </View>
+                      <PersonQuickActionsButton person={person} onChanged={() => void loadPeople(activeEvent)} />
+                    </View>
+                    <Typography variant="body" numberOfLines={1} style={styles.metaText}>
+                      {person.nextStep || person.whatMatters || "Worth remembering."}
+                    </Typography>
+                  </Card>
+                ))}
+
+              </View>
+
+            ) : null}
+
+
+
+            {!isLoading && incompletePeople.length ? (
+
+              <View style={styles.sectionBlock}>
+
+                <View style={styles.sectionHeader}>
+                  <Typography variant="caption">Still incomplete</Typography>
+                  <Typography variant="body" style={styles.metaText}>
+                    Small gaps that make tomorrow harder if they stay vague.
+                  </Typography>
+                </View>
+
+                {incompletePeople.map((person) => (
+                  <Card key={person.id} style={styles.personCard}>
+                    <View style={styles.personHeader}>
+                      <View style={styles.personCopy}>
+                        <Typography variant="h2">{person.name}</Typography>
+                        <Typography variant="caption">
+                          {[person.company, person.nextFollowUpLabel].filter(Boolean).join(" · ")}
+                        </Typography>
+                      </View>
+                      <PersonQuickActionsButton person={person} onChanged={() => void loadPeople(activeEvent)} />
+                    </View>
+                    <View style={styles.nudgeRow}>
+                      {!person.nextStep.trim() ? <View style={styles.nudgePill}><Typography variant="caption">No next move</Typography></View> : null}
+                      {!person.nextFollowUpAt ? <View style={styles.nudgePill}><Typography variant="caption">No reminder</Typography></View> : null}
+                      {!person.preferredChannel ? <View style={styles.nudgePill}><Typography variant="caption">No best channel</Typography></View> : null}
+                    </View>
+                  </Card>
+                ))}
+
+              </View>
+
+            ) : null}
+
+
+
             {!isLoading ? (
 
               <Card style={styles.assistantCard}>
 
-                <Typography variant="caption">Close-loop order</Typography>
+                <Typography variant="caption">Close loops</Typography>
 
                 <Typography variant="body" style={styles.metaText}>
 
-                  Add missing next steps first, set reminders second, then send the follow-ups that are already due.
+                  Generate messages, add reminders, or copy the memory somewhere useful. Then you are done.
 
                 </Typography>
 
@@ -460,7 +528,7 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
                 <Typography variant="body" style={styles.metaText}>
 
-                  Anyone captured while this event is live will appear here for follow-up.
+                  Anyone captured while this event is live will appear here for wrap-up.
 
                 </Typography>
 
@@ -470,67 +538,13 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
 
 
-            {people.map((person) => (
-
-              <Card key={person.id} style={styles.personCard}>
-
-                <View style={styles.personHeader}>
-
-                  <View style={styles.personCopy}>
-
-                    <Typography variant="h2">{person.name}</Typography>
-
-                    <Typography variant="caption">
-
-                      {[person.company, person.nextFollowUpLabel].filter(Boolean).join(" · ")}
-
-                    </Typography>
-
-                  </View>
-
-                  <PersonQuickActionsButton person={person} onChanged={() => void loadPeople(activeEvent)} />
-
-                </View>
-
-                <Typography variant="body" numberOfLines={1} style={styles.metaText}>
-
-                  {person.nextStep || person.whatMatters || "Add the next useful step."}
-
-                </Typography>
-
-                <View style={styles.nudgeRow}>
-
-                  {person.nextStep.trim() && person.nextFollowUpAt && person.preferredChannel ? (
-
-                    <View style={styles.readyPill}><Typography variant="caption" style={styles.readyPillText}>Ready</Typography></View>
-
-                  ) : null}
-
-                  {!person.nextFollowUpAt ? <View style={styles.nudgePill}><Typography variant="caption">Set reminder</Typography></View> : null}
-
-                  {!person.nextStep.trim() ? <View style={styles.nudgePill}><Typography variant="caption">Add next step</Typography></View> : null}
-
-                  {!person.preferredChannel ? <View style={styles.nudgePill}><Typography variant="caption">Add channel</Typography></View> : null}
-
-                  {person.followUpState === "dueToday" || person.followUpState === "overdue" ? (
-
-                    <View style={styles.hotPill}><Typography variant="caption" style={styles.hotPillText}>Needs action</Typography></View>
-
-                  ) : null}
-
-                </View>
-
-              </Card>
-
-            ))}
-
           </ScrollView>
 
 
 
           <View style={styles.footer}>
 
-            <Button label="Finish event mode" onPress={onExitEventMode} />
+            <Button label="Done" onPress={onExitEventMode} />
 
           </View>
 
@@ -616,6 +630,12 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
 
     gap: 6,
 
+  },
+  sectionBlock: {
+    gap: 12,
+  },
+  sectionHeader: {
+    gap: 5,
   },
 
   emptyCard: {
@@ -761,4 +781,3 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
 
 });
-

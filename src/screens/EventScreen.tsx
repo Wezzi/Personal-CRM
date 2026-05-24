@@ -663,7 +663,7 @@ export function EventScreen({
     }
 
     return {
-      title: `${targetEvent.name} follow-up summary`,
+      title: `${targetEvent.name} event memory`,
       markdown: buildSlackCanvasSummary({
         eventName: targetEvent.name,
         eventDate: targetEvent.eventDate,
@@ -729,7 +729,7 @@ export function EventScreen({
               </View>
               <Typography variant="h2">Current event: {currentEvent.name}</Typography>
               <Typography variant="body" style={styles.secondaryText}>
-                {currentEventSummary.peopleCount} people added · {currentEventSummary.followUpsDue} follow-ups due
+                {currentEventSummary.peopleCount} people captured · {currentEventSummary.followUpsDue} conversations still open
               </Typography>
               {canManageCampaignLinks && currentEvent.isCampaignMode && currentEvent.campaignSlug ? (
                 <Typography variant="caption" style={styles.secondaryText}>
@@ -823,18 +823,36 @@ export function EventScreen({
                 <Button label="Edit" onPress={() => openEditEvent()} variant="ghost" fullWidth={false} size="compact" />
               </View>
               <View style={styles.eventCopy}>
+                <Typography variant="caption">Event memory</Typography>
                 <Typography variant="h2">{selectedEvent.name}</Typography>
                 <Typography variant="caption" style={styles.secondaryText}>
                   {formatCategoryLabel(selectedEvent.category)}
                   {selectedEvent.eventDate ? ` · ${formatEventDate(selectedEvent.eventDate)}` : ""}
-                  {` · ${selectedEvent.interactionCount} notes · ${selectedEvent.peopleCount} people`}
                 </Typography>
               </View>
               {selectedEventFollowUpSummary ? (
-                <Typography variant="caption">
-                  Due today {selectedEventFollowUpSummary.dueToday} · Overdue {selectedEventFollowUpSummary.overdue} · Upcoming {selectedEventFollowUpSummary.upcoming}
-                </Typography>
+                <View style={styles.memoryGrid}>
+                  <View style={styles.memoryCell}>
+                    <Typography variant="h2">{selectedEventFollowUpSummary.peopleCount}</Typography>
+                    <Typography variant="caption">People met</Typography>
+                  </View>
+                  <View style={styles.memoryCell}>
+                    <Typography variant="h2">{selectedEvent.interactionCount}</Typography>
+                    <Typography variant="caption">Notes saved</Typography>
+                  </View>
+                  <View style={styles.memoryCell}>
+                    <Typography variant="h2">{selectedEventFollowUpSummary.followUpsDue}</Typography>
+                    <Typography variant="caption">Conversations still open</Typography>
+                  </View>
+                  <View style={styles.memoryCell}>
+                    <Typography variant="h2">{selectedEventFollowUpSummary.upcoming}</Typography>
+                    <Typography variant="caption">Upcoming reminders</Typography>
+                  </View>
+                </View>
               ) : null}
+              <Typography variant="body" style={styles.secondaryText}>
+                Use this as the desktop memory for the event: who you met, what you promised, and what still needs a clean next move.
+              </Typography>
               <View style={styles.featureActions}>
                 <Button
                   label={isCurrentEvent(selectedEvent) ? "End event" : "Set current"}
@@ -925,7 +943,7 @@ export function EventScreen({
                         {formatCategoryLabel(event.category as never)} · {summary.peopleCount} people · {event.interactionCount} notes
                       </Typography>
                       <Typography variant="caption">
-                        Due today {summary.dueToday} · Overdue {summary.overdue} · Upcoming {summary.upcoming}
+                        Today {summary.dueToday} · Still open {summary.overdue} · Upcoming {summary.upcoming}
                       </Typography>
                       <View style={styles.eventActions}>
                         <Button label="View" onPress={() => setSelectedEventId(event.id)} variant="ghost" fullWidth={false} size="compact" />
@@ -1184,6 +1202,21 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   eventCopy: {
     flex: 1,
     gap: 6,
+  },
+  memoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  memoryCell: {
+    flex: 1,
+    minWidth: 140,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+    padding: 12,
   },
   peopleStack: {
     gap: 12,

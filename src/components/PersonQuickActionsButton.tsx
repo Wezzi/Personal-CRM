@@ -82,7 +82,7 @@ function getStatusOptionsForGoal(goal: string) {
   }
 
   if (/business|client|sales|opportunity/.test(normalized)) {
-    return ["New lead", "Qualified", "Needs follow-up", "Meeting booked", "Proposal sent", "Negotiating", "Converted", "Not relevant"];
+    return ["New lead", "Qualified", "Needs next move", "Meeting booked", "Proposal sent", "Negotiating", "Converted", "Not relevant"];
   }
 
   if (/partner/.test(normalized)) {
@@ -93,7 +93,7 @@ function getStatusOptionsForGoal(goal: string) {
     return ["Captured", "Worth revisiting", "Intro opportunity", "Keep warm", "Done"];
   }
 
-  return ["Captured", "Needs follow-up", "Meeting booked", "Intro made", "Keep warm", "Done", "Not relevant"];
+  return ["Captured", "Needs next move", "Meeting booked", "Intro made", "Keep warm", "Done", "Not relevant"];
 }
 
 function toTimelineLabel(rawNote: string, eventName?: string | null) {
@@ -477,9 +477,9 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
             <Typography variant="caption">Quick actions</Typography>
             <Typography variant="h2">{person.name}</Typography>
             <Button label="Mark contacted" onPress={() => void handleMarkContacted()} variant="ghost" />
-            <Button label="Draft follow-up" onPress={openDraft} variant="ghost" disabled={!contactMethods.length} />
+            <Button label="Draft message" onPress={openDraft} variant="ghost" disabled={!contactMethods.length} />
             <Button label="Update status" onPress={openStatus} variant="ghost" />
-            <Button label="Set follow-up date" onPress={openReminder} variant="ghost" />
+            <Button label="Set reminder" onPress={openReminder} variant="ghost" />
             {onEdit ? <Button label="Edit contact" onPress={onEdit} variant="ghost" /> : null}
             <Button label="Timeline" onPress={() => void openTimeline()} variant="ghost" />
             <Button label="Close" onPress={closeMenu} variant="ghost" />
@@ -560,7 +560,7 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeDraft} />
           <Card style={styles.modalCard}>
-            <Typography variant="h2">Draft follow-up</Typography>
+            <Typography variant="h2">Draft message</Typography>
             <View style={styles.methodRow}>
               {contactMethods.map((item) => (
                 <Button
@@ -593,7 +593,7 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={closeReminder} />
           <Card style={styles.modalCard}>
-            <Typography variant="h2">Set follow-up date</Typography>
+            <Typography variant="h2">Set reminder</Typography>
             <View style={styles.methodRow}>
               <Button
                 label="Tomorrow"
@@ -628,7 +628,7 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
             />
             <View style={styles.actionRow}>
               <Button label="Cancel" onPress={closeReminder} variant="ghost" fullWidth={false} size="compact" />
-              <Button label="Save follow-up date" onPress={() => void setReminder(customReminderDate.trim())} fullWidth={false} size="compact" />
+              <Button label="Save reminder" onPress={() => void setReminder(customReminderDate.trim())} fullWidth={false} size="compact" />
             </View>
           </Card>
         </View>

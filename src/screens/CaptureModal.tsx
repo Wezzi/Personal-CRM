@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
 
 import {
   requestRecordingPermissionsAsync,
@@ -112,7 +113,7 @@ export type LockedEventDraft = {
 type CaptureModalProps = {
   visible: boolean;
   onClose: () => void;
-  onSave: (draft: ParsedPersonDraft, options?: { addAnother?: boolean }) => void | Promise<void>;
+  onSave: (draft: ParsedPersonDraft, options?: { addAnother?: boolean; keepOpen?: boolean }) => void | Promise<void>;
   title?: string;
   saveLabel?: string;
   isSaving?: boolean;
@@ -123,6 +124,7 @@ type CaptureModalProps = {
   showSaveAndAddAnother?: boolean;
   draftStorageKey?: string;
   autosaveWithInitialDraft?: boolean;
+  showPostSaveActions?: boolean;
 };
 
 type SavedCaptureDraft = {
@@ -153,6 +155,15 @@ function buildDraftSentence(draft: ParsedPersonDraft) {
   const followUpDate = draft.nextFollowUpAt ? ` Follow up on ${formatFollowUpDate(draft.nextFollowUpAt)}.` : "";
 
   return `I met ${name} from ${company} at ${event}. What matters: ${context}. Next step: ${nextStep}.${followUpDate}`;
+}
+
+function buildPostCaptureMessage(draft: ParsedPersonDraft) {
+  const name = cleanValue(draft.name) || "there";
+  const context = cleanValue(draft.whatMatters) || cleanValue(draft.nextStep) || "our conversation";
+  const event = cleanValue(draft.event);
+  const eventLine = event && event !== "No event" ? ` at ${event}` : "";
+
+  return `Hey ${name}, great meeting you${eventLine}. Picking up from ${context}. Would be good to continue the conversation.`;
 }
 
 function getSuggestedPresetLabel(category: EventCategory | "" | null | undefined) {
@@ -314,6 +325,7 @@ export function CaptureModal({
   showSaveAndAddAnother = true,
   draftStorageKey,
   autosaveWithInitialDraft = false,
+  showPostSaveActions = true,
 }: CaptureModalProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -323,6 +335,7 @@ export function CaptureModal({
   const [pasteInput, setPasteInput] = useState("");
   const [customFollowUpDate, setCustomFollowUpDate] = useState("");
   const [hasHydratedSavedDraft, setHasHydratedSavedDraft] = useState(false);
+  const [savedDraftForNextAction, setSavedDraftForNextAction] = useState<ParsedPersonDraft | null>(null);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -396,6 +409,7 @@ export function CaptureModal({
       setIsCardScanProcessing(false);
       setIsScanChoiceVisible(false);
       setIsQrScannerVisible(false);
+      setSavedDraftForNextAction(null);
       setHasHydratedSavedDraft(true);
     }
 
@@ -771,6 +785,7 @@ export function CaptureModal({
     setPasteInput("");
     setActiveMethod(initialMethod);
     setFollowUpManuallySet(false);
+    setSavedDraftForNextAction(null);
   }
 
   async function handleSave(addAnother = false) {
@@ -782,7 +797,16 @@ export function CaptureModal({
       void AsyncStorage.removeItem(draftStorageKey);
     }
 
-    await onSave(buildCleanDraft(), { addAnother });
+    const cleanDraft = buildCleanDraft();
+    const shouldShowNextActions = !addAnother && showPostSaveActions && showSaveAndAddAnother;
+
+    await onSave(cleanDraft, { addAnother, keepOpen: shouldShowNextActions });
+
+    if (shouldShowNextActions) {
+      setSavedDraftForNextAction(cleanDraft);
+      return;
+    }
+
     if (addAnother) {
       resetForAnotherCapture();
     }
@@ -794,6 +818,66 @@ export function CaptureModal({
     }
 
     onClose();
+  }
+
+  async function handleCopySavedDraftMessage() {
+    if (!savedDraftForNextAction) {
+      return;
+    }
+
+    try {
+      await Clipboard.setStringAsync(buildPostCaptureMessage(savedDraftForNextAction));
+      Alert.alert("Draft copied", "The message is ready to paste into their preferred channel.");
+    } catch {
+      Alert.alert("Copy failed", "Could not copy the draft message.");
+    }
+  }
+
+  function handleSavedDraftAddAnother() {
+    resetForAnotherCapture();
+  }
+
+  function renderPostSaveActions() {
+    if (!savedDraftForNextAction) {
+      return null;
+    }
+
+    return (
+      <Card style={styles.sectionCard}>
+        <View style={styles.sectionIntro}>
+          <Typography variant="caption">What next?</Typography>
+          <Typography variant="h1">{savedDraftForNextAction.name} is saved.</Typography>
+          <Typography variant="body" style={styles.helperText}>
+            Close the loop now, add one more person, or leave it for wrap-up.
+          </Typography>
+        </View>
+
+        <Card style={styles.nextActionPreviewCard}>
+          <Typography variant="caption">Draft message</Typography>
+          <Typography variant="body" style={styles.previewText}>
+            {buildPostCaptureMessage(savedDraftForNextAction)}
+          </Typography>
+        </Card>
+
+        <View style={styles.postSaveActionGrid}>
+          <Button label="Draft message" onPress={() => void handleCopySavedDraftMessage()} />
+          <Button
+            label={savedDraftForNextAction.nextFollowUpAt ? `Reminder: ${formatFollowUpDate(savedDraftForNextAction.nextFollowUpAt)}` : "Add reminder later"}
+            onPress={() => {
+              Alert.alert(
+                savedDraftForNextAction.nextFollowUpAt ? "Reminder saved" : "No reminder yet",
+                savedDraftForNextAction.nextFollowUpAt
+                  ? "This date is saved on the person. You can add it to calendar from their card."
+                  : "Open this person later to add a reminder."
+              );
+            }}
+            variant="ghost"
+          />
+          <Button label="Save & add another" onPress={handleSavedDraftAddAnother} variant="ghost" />
+          <Button label="Done" onPress={handleClose} variant="ghost" />
+        </View>
+      </Card>
+    );
   }
 
   return (
@@ -821,7 +905,7 @@ export function CaptureModal({
               </Pressable>
             </View>
 
-            {lockedEvent ? (
+            {lockedEvent && !savedDraftForNextAction ? (
               <Card style={styles.lockedEventCard}>
                 <Typography variant="caption">Current event active</Typography>
                 <Typography variant="body" style={styles.previewText}>
@@ -830,18 +914,20 @@ export function CaptureModal({
               </Card>
             ) : null}
 
+            {savedDraftForNextAction ? renderPostSaveActions() : (
+              <>
             {showQuickCapture ? (
               <Card style={styles.sectionCard}>
                 <View style={styles.sectionIntro}>
                   <Typography variant="caption">Quick capture</Typography>
                   <Typography variant="body" style={styles.helperText}>
-                    Paste, speak, or scan when speed matters. Everything lands back in this review form.
+                    Speak the context, scan contact details, or type one messy note. Everything becomes a draft you can correct.
                   </Typography>
                 </View>
 
                 <View style={styles.chipRow}>
                   <Button
-                    label="Paste"
+                    label="Quick note"
                     onPress={() => handleMethodPress("paste")}
                     variant={activeMethod === "paste" ? "primary" : "ghost"}
                     fullWidth={false}
@@ -890,9 +976,9 @@ export function CaptureModal({
 
                 {activeMethod === "paste" ? (
                   <View style={styles.capturePanel}>
-                    <Typography variant="caption">Paste LinkedIn or copied contact text</Typography>
+                    <Typography variant="caption">Quick note or copied profile</Typography>
                     <TextInput
-                      placeholder="Paste a LinkedIn URL, email signature, or copied attendee text"
+                      placeholder="Met Sarah from Stripe. Partnership lead. Follow up next week on LinkedIn."
                       placeholderTextColor={colors.textTertiary}
                       style={[styles.fieldInput, styles.textAreaInput]}
                       value={pasteInput}
@@ -902,26 +988,31 @@ export function CaptureModal({
                       autoCorrect={false}
                     />
                     <Typography variant="body" style={styles.helperText}>
-                      We will pull through anything obvious now, then you can review and clean it up below.
+                      We will pull through obvious names, links, emails, and context. You only correct what matters.
                     </Typography>
-                    <Button label="Parse pasted text" onPress={handlePasteParse} />
+                    <Button label="Extract draft" onPress={handlePasteParse} />
                   </View>
                 ) : null}
 
                 {activeMethod === "voice" ? (
                   <View style={styles.placeholderPanel}>
-                    <Typography variant="h2">Voice capture placeholder</Typography>
+                    <Typography variant="h2">{recorderState.isRecording ? "Listening..." : "Voice fills the context"}</Typography>
                     <Typography variant="body" style={styles.helperText}>
-                      Next up: tap record, transcribe the noisy event note, then review the extracted fields here.
+                      Say who they are, why they matter, what you promised, and when to follow up. The fields below will update after transcription.
                     </Typography>
+                    {voiceError ? (
+                      <Typography variant="caption" style={styles.errorText}>
+                        {voiceError}
+                      </Typography>
+                    ) : null}
                   </View>
                 ) : null}
 
                 {activeMethod === "scan" ? (
                   <View style={styles.placeholderPanel}>
-                    <Typography variant="h2">Scan capture</Typography>
+                    <Typography variant="h2">Scan fills contact details</Typography>
                     <Typography variant="body" style={styles.helperText}>
-                      Scan a QR code now, or import a business card or badge photo for OCR. Everything still lands back in this same review form.
+                      Use this for QR codes, badges, business cards, LinkedIn, email, and phone. Add the relationship context after.
                     </Typography>
                     {scanError ? (
                       <Typography variant="caption" style={styles.errorText}>
@@ -1029,7 +1120,7 @@ export function CaptureModal({
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Next step</Typography>
                 <Typography variant="body" style={styles.helperText}>
-                  The promised action, open loop, or messy thought you do not want to lose.
+                  The promise, open loop, or messy thought you do not want to lose.
                 </Typography>
               </View>
 
@@ -1185,9 +1276,12 @@ export function CaptureModal({
                 {sentencePreview}
               </Typography>
             </Card>
+              </>
+            )}
           </ScrollView>
 
-          <View style={styles.footerWrap}>
+          {!savedDraftForNextAction ? (
+            <View style={styles.footerWrap}>
             <View style={styles.footerButtons}>
               <Button label={saveLabel} onPress={() => void handleSave(false)} loading={isSaving} disabled={!canSave} />
               {showSaveAndAddAnother ? (
@@ -1196,6 +1290,7 @@ export function CaptureModal({
               <Button label="Cancel" onPress={handleClose} variant="ghost" />
             </View>
           </View>
+          ) : null}
         </View>
 
         <Modal
@@ -1359,6 +1454,13 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   previewCard: {
     marginBottom: 8,
     borderColor: colors.primaryAction,
+  },
+  nextActionPreviewCard: {
+    gap: 8,
+    backgroundColor: colors.surfaceMuted,
+  },
+  postSaveActionGrid: {
+    gap: 10,
   },
   footerWrap: {
     position: "absolute",

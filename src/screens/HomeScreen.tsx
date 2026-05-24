@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { CurrentEventValue } from "../components/CurrentEventSheet";
@@ -48,6 +48,8 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { width } = useWindowDimensions();
+  const isMobileFieldMode = width < 720;
   const [isCaptureOpen, setCaptureOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Awaited<ReturnType<typeof listPeopleInsights>>[number] | null>(null);
   const [isSaving, setSaving] = useState(false);
@@ -68,6 +70,25 @@ export function HomeScreen({
   );
   const followUpPeople = useMemo(
     () => people.filter((person) => isContactStale(person.daysSinceLastContact, person.priority)).slice(0, 4),
+    [people]
+  );
+  const todayPeople = useMemo(() => {
+    const seen = new Set<string>();
+    return [...dueTodayPeople, ...overduePeople, ...followUpPeople]
+      .filter((person) => {
+        if (seen.has(person.id)) {
+          return false;
+        }
+        seen.add(person.id);
+        return true;
+      })
+      .slice(0, 5);
+  }, [dueTodayPeople, followUpPeople, overduePeople]);
+  const missedOpportunities = useMemo(
+    () =>
+      people
+        .filter((person) => !person.nextStep.trim() || !person.nextFollowUpAt || !person.preferredChannel)
+        .slice(0, 3),
     [people]
   );
   const waitingOnYouCount = dueTodayPeople.length + overduePeople.length;
@@ -165,7 +186,7 @@ export function HomeScreen({
     void persistCaptureState();
   }, [hasHydratedCaptureState, isCaptureOpen]);
 
-  async function handleSaveDraft(draft: ParsedPersonDraft, options?: { addAnother?: boolean }) {
+  async function handleSaveDraft(draft: ParsedPersonDraft, options?: { addAnother?: boolean; keepOpen?: boolean }) {
     if (isSaving) {
       return;
     }
@@ -240,12 +261,12 @@ export function HomeScreen({
         has_phone: Boolean(draft.phoneNumber),
       });
 
-      if (!options?.addAnother) {
+      if (!options?.addAnother && !options?.keepOpen) {
         setCaptureOpen(false);
         await AsyncStorage.setItem(HOME_CAPTURE_OPEN_STORAGE_KEY, "false");
       }
       await loadData();
-      if (!options?.addAnother) {
+      if (!options?.addAnother && !options?.keepOpen) {
         Alert.alert("Contact added", `${draft.name} saved${eventName && eventName !== "No event" ? ` to ${eventName}` : ""}.`);
       }
     } catch (error) {
@@ -307,6 +328,136 @@ export function HomeScreen({
     );
   }
 
+  function renderCaptureModal() {
+    return (
+      <CaptureModal
+        visible={isCaptureOpen}
+        onClose={closeCapture}
+        onSave={handleSaveDraft}
+        saveLabel={editingPerson ? "Save Changes" : "Save & Close"}
+        isSaving={isSaving}
+        lockedEvent={currentEvent}
+        initialDraft={editingPerson ? {
+          name: editingPerson.name,
+          priority: editingPerson.priority,
+          tags: editingPerson.tags,
+          company: editingPerson.company,
+          linkedinUrl: editingPerson.linkedinUrl,
+          email: editingPerson.email,
+          phoneNumber: editingPerson.phoneNumber,
+          preferredChannel: editingPerson.preferredChannel,
+          preferredChannelOther: editingPerson.preferredChannelOther,
+          event: editingPerson.lastEventName || "",
+          whatMatters: editingPerson.whatMatters || editingPerson.lastInteractionNote,
+          nextStep: editingPerson.nextStep || "",
+          nextFollowUpAt: editingPerson.nextFollowUpAt || "",
+          followUpPreset: "",
+        } : null}
+        initialMethod="manual"
+        showQuickCapture={!editingPerson}
+        showSaveAndAddAnother={!editingPerson}
+        draftStorageKey={HOME_CAPTURE_DRAFT_STORAGE_KEY}
+        autosaveWithInitialDraft={Boolean(editingPerson)}
+      />
+    );
+  }
+
+  if (isMobileFieldMode) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          <ScrollView contentContainerStyle={styles.mobileContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerCopy}>
+                <Typography variant="caption">Today</Typography>
+                <Typography variant="h1">Who needs you now?</Typography>
+                <Typography variant="body" style={styles.sectionMeta}>
+                  Capture fast. Come back to the few conversations still open.
+                </Typography>
+              </View>
+            </View>
+
+            {currentEvent ? (
+              <Card style={styles.currentEventCard}>
+                <View style={styles.currentEventTopRow}>
+                  <Typography variant="caption">Current event</Typography>
+                  <Typography variant="caption">
+                    {currentEvent.category === "other" && currentEvent.customCategoryLabel?.trim()
+                      ? currentEvent.customCategoryLabel.trim()
+                      : formatCategoryLabel(currentEvent.category)}
+                  </Typography>
+                </View>
+                <Typography variant="h2">{currentEvent.name}</Typography>
+                <Typography variant="body" style={styles.sectionMeta}>
+                  {currentEventSummary
+                    ? `${currentEventSummary.total} people captured · ${currentEventSummary.outstanding} conversations still open.`
+                    : "New captures will attach to this event."}
+                </Typography>
+                <View style={styles.eventActionRow}>
+                  <Button label="Wrap up" onPress={onOpenEventWrapUp || (() => undefined)} variant="ghost" fullWidth={false} size="compact" />
+                </View>
+              </Card>
+            ) : null}
+
+            {errorMessage ? (
+              <Card>
+                <Typography variant="body">{errorMessage}</Typography>
+              </Card>
+            ) : null}
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Typography variant="caption">Who to contact today</Typography>
+                <Typography variant="body" style={styles.sectionMeta}>
+                  Max five people so this stays doable.
+                </Typography>
+              </View>
+              {todayPeople.map((person) => renderPersonCard(person, "muted"))}
+              {!isLoading && todayPeople.length === 0 ? (
+                <Card style={styles.emptyTodayCard}>
+                  <Typography variant="h2">No urgent conversations today</Typography>
+                  <Typography variant="body" style={styles.sectionMeta}>
+                    Capture someone new when the next useful conversation happens.
+                  </Typography>
+                </Card>
+              ) : null}
+            </View>
+
+            {missedOpportunities.length ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Typography variant="caption">Missed opportunities</Typography>
+                  <Typography variant="body" style={styles.sectionMeta}>
+                    People with missing context, reminder, or contact preference.
+                  </Typography>
+                </View>
+                {missedOpportunities.map((person) => renderPersonCard(person))}
+              </View>
+            ) : null}
+          </ScrollView>
+
+          {showCaptureCoach ? (
+            <View pointerEvents="box-none" style={styles.captureCoachWrap}>
+              <View style={styles.captureCoachCard}>
+                <Typography variant="caption">Next</Typography>
+                <Typography variant="h2">Tap + when you meet someone.</Typography>
+                <Typography variant="body" style={styles.sectionMeta}>
+                  Capture the person now. Tidy the details later.
+                </Typography>
+                <View style={styles.onboardingActions}>
+                  <Button label="Got it" onPress={onCaptureCoachDone || (() => undefined)} variant="ghost" fullWidth={false} size="compact" />
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          <FloatingFab label="+" onPress={openCapture} style={showCaptureCoach ? styles.fabCoachTarget : null} />
+          {renderCaptureModal()}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -321,7 +472,7 @@ export function HomeScreen({
               <Typography variant="body" style={styles.sectionMeta}>
                 {currentEvent
                   ? "Capture conversations now, then close the loop before context fades."
-                  : "Quick follow-ups before the day gets loud."}
+                  : "Open conversations before the day gets loud."}
               </Typography>
             </View>
           </View>
@@ -342,8 +493,8 @@ export function HomeScreen({
               <Typography variant="body" style={styles.sectionMeta}>
                 {currentEvent.eventDate?.trim() ? `${currentEvent.eventDate.trim()} · ` : ""}
                 {currentEventSummary
-                  ? `${currentEventSummary.total} people added · ${currentEventSummary.outstanding} still need follow-up. New captures will keep tagging to this event until you exit event mode.`
-                  : "Any person saved now will be attached to this event until you exit event mode."}
+                  ? `${currentEventSummary.total} people captured · ${currentEventSummary.outstanding} conversations still open. New captures will keep tagging to this event until you end event mode.`
+                  : "Any person saved now will be attached to this event until you end event mode."}
               </Typography>
               {currentEventSummary ? (
                 <Typography variant="caption" style={styles.sectionMeta}>
@@ -376,8 +527,8 @@ export function HomeScreen({
                   <Typography variant="h2" style={styles.heroHeading}>Today’s relationship queue</Typography>
                   <Typography variant="body" style={styles.heroMeta}>
                     {currentEvent
-                      ? "See who is ready, what needs cleanup, and what follow-ups are already slipping."
-                      : "Due and overdue follow-ups first, with shortcuts into the wider list."}
+                      ? "See who is ready, what needs cleanup, and which conversations are still open."
+                      : "Today’s open conversations first, with shortcuts into the wider list."}
                   </Typography>
                 </View>
               {waitingOnYouCount ? (
@@ -396,7 +547,7 @@ export function HomeScreen({
                 }}
               >
                 <Typography variant="h2" style={styles.heroMetric}>{people.length}</Typography>
-                <Typography variant="caption" style={styles.heroCaption}>{currentEvent ? "Total contacts" : "All contacts"}</Typography>
+                <Typography variant="caption" style={styles.heroCaption}>{currentEvent ? "People captured" : "Everyone"}</Typography>
                 <Typography variant="caption" style={styles.tapCue}>Tap to view</Typography>
               </Pressable>
               <Pressable
@@ -418,7 +569,7 @@ export function HomeScreen({
                 }}
               >
                 <Typography variant="h2" style={styles.heroMetric}>{nudgeCount}</Typography>
-                <Typography variant="caption" style={styles.heroCaption}>Needs follow-up</Typography>
+                <Typography variant="caption" style={styles.heroCaption}>Still open</Typography>
                 <Typography variant="caption" style={styles.tapCue}>Tap to view</Typography>
               </Pressable>
             </View>
@@ -427,9 +578,9 @@ export function HomeScreen({
           {dueTodayPeople.length ? (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Typography variant="caption">Due today</Typography>
+                <Typography variant="caption">Today</Typography>
                 <Typography variant="body" style={styles.sectionMeta}>
-                  Follow-ups scheduled for today.
+                  Conversations you planned to pick up today.
                 </Typography>
               </View>
               {dueTodayPeople.map((person) => renderPersonCard(person, "muted"))}
@@ -439,9 +590,9 @@ export function HomeScreen({
           {overduePeople.length ? (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Typography variant="caption">Overdue</Typography>
+                <Typography variant="caption">Still open</Typography>
                 <Typography variant="body" style={styles.sectionMeta}>
-                  Follow-ups with dates before today.
+                  Conversations with dates before today.
                 </Typography>
               </View>
               {overduePeople.map((person) => renderPersonCard(person, "muted"))}
@@ -464,7 +615,7 @@ export function HomeScreen({
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Typography variant="caption">Needs follow-up</Typography>
+              <Typography variant="caption">Needs a nudge</Typography>
               <Typography variant="body" style={styles.sectionMeta}>
                 Stale high-priority relationships that may need a nudge.
               </Typography>
@@ -497,35 +648,7 @@ export function HomeScreen({
           style={showCaptureCoach ? styles.fabCoachTarget : null}
         />
 
-        <CaptureModal
-          visible={isCaptureOpen}
-          onClose={closeCapture}
-          onSave={handleSaveDraft}
-          saveLabel={editingPerson ? "Save Changes" : "Save & Close"}
-          isSaving={isSaving}
-          lockedEvent={currentEvent}
-          initialDraft={editingPerson ? {
-            name: editingPerson.name,
-            priority: editingPerson.priority,
-            tags: editingPerson.tags,
-            company: editingPerson.company,
-            linkedinUrl: editingPerson.linkedinUrl,
-            email: editingPerson.email,
-            phoneNumber: editingPerson.phoneNumber,
-            preferredChannel: editingPerson.preferredChannel,
-            preferredChannelOther: editingPerson.preferredChannelOther,
-            event: editingPerson.lastEventName || "",
-            whatMatters: editingPerson.whatMatters || editingPerson.lastInteractionNote,
-            nextStep: editingPerson.nextStep || "",
-            nextFollowUpAt: editingPerson.nextFollowUpAt || "",
-            followUpPreset: "",
-          } : null}
-          initialMethod="manual"
-          showQuickCapture={!editingPerson}
-          showSaveAndAddAnother={!editingPerson}
-          draftStorageKey={HOME_CAPTURE_DRAFT_STORAGE_KEY}
-          autosaveWithInitialDraft={Boolean(editingPerson)}
-        />
+        {renderCaptureModal()}
       </View>
     </SafeAreaView>
   );
@@ -545,6 +668,12 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     paddingTop: layout.sectionGap,
     paddingBottom: 120,
     gap: layout.sectionGap,
+  },
+  mobileContent: {
+    paddingHorizontal: layout.screenPaddingHorizontal,
+    paddingTop: layout.sectionGap,
+    paddingBottom: 128,
+    gap: 20,
   },
   headerRow: {
     gap: 10,
@@ -679,6 +808,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     gap: 10,
   },
   mutedCard: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  emptyTodayCard: {
+    gap: 8,
     backgroundColor: colors.surfaceMuted,
   },
   connectionHeader: {

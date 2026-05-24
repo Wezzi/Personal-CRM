@@ -40,16 +40,16 @@ export function buildSlackCanvasSummary(input: {
   const eventDate = input.eventDate ? `\nDate: ${input.eventDate}` : "";
 
   const sections = [
-    `# ${input.eventName} follow-up summary${eventDate}`,
+    `# ${input.eventName} event memory${eventDate}`,
     input.campaignLink ? `Campaign link: ${input.campaignLink}` : "",
     `People captured: ${input.people.length}`,
-    `Follow-ups due: ${overdue.length + dueToday.length}`,
+    `Conversations still open: ${overdue.length + dueToday.length}`,
     "",
-    "## Due now",
+    "## Conversations still open",
     [...overdue, ...dueToday].length ? [...overdue, ...dueToday].map(formatPersonLine).join("\n") : "- Nothing due right now.",
     "",
     "## Upcoming",
-    upcoming.length ? upcoming.slice(0, 12).map(formatPersonLine).join("\n") : "- No upcoming follow-ups set.",
+    upcoming.length ? upcoming.slice(0, 12).map(formatPersonLine).join("\n") : "- No upcoming reminders set.",
     "",
     "## Needs next action",
     noNextAction.length ? noNextAction.slice(0, 12).map(formatPersonLine).join("\n") : "- Everyone has a next action.",

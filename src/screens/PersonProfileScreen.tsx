@@ -725,7 +725,7 @@ export function PersonProfileScreen({
     }
   }
 
-  async function handleSaveInteraction(draft: ParsedPersonDraft, options?: { addAnother?: boolean }) {
+  async function handleSaveInteraction(draft: ParsedPersonDraft, options?: { addAnother?: boolean; keepOpen?: boolean }) {
     if (isSaving) {
       return;
     }
@@ -867,12 +867,12 @@ export function PersonProfileScreen({
         has_phone: Boolean(draft.phoneNumber),
       });
 
-      if (!options?.addAnother) {
+      if (!options?.addAnother && !options?.keepOpen) {
         setCaptureOpen(false);
         await clearPeopleCaptureState();
       }
       await loadProfileData();
-      if (!options?.addAnother) {
+      if (!options?.addAnother && !options?.keepOpen) {
         Alert.alert("Timeline updated", selectedPerson ? `${selectedPerson.name}'s next step is saved.` : "New contact added with context.");
       }
     } catch (error) {
@@ -1534,7 +1534,7 @@ export function PersonProfileScreen({
           <View style={[styles.headerRow, isCompactLayout ? styles.headerRowCompact : null]}>
             <View style={styles.headerCopy}>
               <Typography variant="caption">People</Typography>
-              <Typography variant="h1">Your relationship command queue.</Typography>
+              <Typography variant="h1">People you should not forget.</Typography>
             </View>
             {!isCompactLayout ? (
               <View style={styles.headerActions}>
@@ -1572,10 +1572,10 @@ export function PersonProfileScreen({
 ) : null}
 
           <Card style={styles.attentionCard}>
-            <Typography variant="caption">Attention system</Typography>
+            <Typography variant="caption">Today</Typography>
             <View style={styles.controlRow}>
               <Button
-                label={`Needs follow up ${attentionCounts.needsFollowUp}`}
+                label={`Still open ${attentionCounts.needsFollowUp}`}
                 onPress={() => {
                   setStatusMode("all");
                   setPeopleView("needsFollowUp");
@@ -1595,7 +1595,7 @@ export function PersonProfileScreen({
                 size="compact"
               />
               <Button
-                label={`All contacts ${attentionCounts.allContacts}`}
+                label={`Everyone ${attentionCounts.allContacts}`}
                 onPress={() => {
                   setStatusMode("all");
                   setPeopleView("allContacts");
@@ -1607,15 +1607,15 @@ export function PersonProfileScreen({
             </View>
             <Typography variant="body" style={styles.confirmMeta}>
               {peopleView === "needsFollowUp"
-                ? "Overdue, due today, high-priority stale, and recently met contacts without a next step."
+                ? "Conversations due today, still open, high-priority stale, or missing a clear next move."
                 : peopleView === "recentlyMet"
                   ? "People captured in the last 7 days with event context ready to review."
-                  : "Searchable archive for everyone you have captured."}
+                  : "Everyone you have met, searchable when you need the full memory."}
             </Typography>
           </Card>
 
           <Card>
-            <Typography variant="caption">Refine view</Typography>
+            <Typography variant="caption">Find someone</Typography>
 
             <Typography variant="caption" style={styles.subSectionLabel}>
               Event type
@@ -1708,7 +1708,7 @@ export function PersonProfileScreen({
             <Card style={styles.featureCard}>
               <View style={styles.selectedContactHeader}>
                 <View style={styles.selectedContactTitle}>
-                  <Typography variant="caption">Selected contact</Typography>
+              <Typography variant="caption">Person memory</Typography>
                   <Typography variant="h1">{selectedPerson.name}</Typography>
                 </View>
                 <PersonQuickActionsButton person={selectedPerson} onChanged={loadProfileData} onEdit={() => openEditPerson(selectedPerson)} />
@@ -1744,7 +1744,7 @@ export function PersonProfileScreen({
 
               <View style={styles.secondaryActionRow}>
                 <Button
-                  label="Follow up"
+                  label="Draft message"
                   onPress={() => openFollowUpExecution(selectedPerson)}
                   fullWidth={false}
                   size="compact"
@@ -1835,7 +1835,7 @@ export function PersonProfileScreen({
                         {person.tags.length ? <Typography variant="caption">Tags: {person.tags.join(", ")}</Typography> : null}
                         {renderContactActionButtons(person, true)}
                         <View style={styles.secondaryActionRow}>
-                          <Button label="Follow up" onPress={() => openFollowUpExecution(person)} fullWidth={false} size="compact" />
+                          <Button label="Draft message" onPress={() => openFollowUpExecution(person)} fullWidth={false} size="compact" />
                           {person.nextFollowUpAt ? (
                             <Button
                               label="Add to calendar"
@@ -1865,7 +1865,7 @@ export function PersonProfileScreen({
                       </View>
                       <View style={styles.cardActionRow}>
                         <Button
-                          label="Follow up"
+                          label="Draft message"
                           onPress={() => openFollowUpExecution(person)}
                           variant="primary"
                           fullWidth={false}
