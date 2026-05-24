@@ -36,6 +36,7 @@ import { layout, useTheme, useThemedStyles } from "../theme/tokens";
 import { CalendarDestination, CalendarSuggestedSlot, getAvailableCalendarDestinations, getFollowUpSlotSuggestions, openFollowUpInCalendar } from "../lib/calendar";
 import { clearPendingExternalAction, getPendingExternalAction, PendingExternalAction, setPendingExternalAction } from "../lib/externalActionFlow";
 import { captureAnalyticsEvent } from "../lib/analytics";
+import { generateFollowUpDraft } from "../lib/followUpDraft";
 
 type SortMode = "recent" | "stale" | "name" | "frequency";
 type CaptureMode = "createInteraction" | "createPerson" | "edit";
@@ -148,6 +149,7 @@ export function PersonProfileScreen({
   const [calendarPickerPerson, setCalendarPickerPerson] = useState<(typeof people)[number] | null>(null);
   const [followUpPerson, setFollowUpPerson] = useState<(typeof people)[number] | null>(null);
   const [followUpMessage, setFollowUpMessage] = useState("");
+  const [isGeneratingFollowUpMessage, setGeneratingFollowUpMessage] = useState(false);
   const [updateCalendarSlots, setUpdateCalendarSlots] = useState<CalendarSuggestedSlot[]>([]);
   const [isCheckingUpdateCalendar, setCheckingUpdateCalendar] = useState(false);
 
@@ -1063,14 +1065,39 @@ export function PersonProfileScreen({
     });
   }
 
+  async function improveFollowUpMessage(person: (typeof people)[number], fallbackMessage: string) {
+    try {
+      setGeneratingFollowUpMessage(true);
+      const message = await generateFollowUpDraft({
+        name: person.name,
+        company: person.company,
+        eventName: person.lastEventName,
+        whatMatters: person.whatMatters,
+        nextStep: person.nextStep,
+        relationshipGoal: person.tags[0] || null,
+        relationshipStatus: person.relationshipStatus,
+        preferredChannel: person.preferredChannel,
+        preferredChannelOther: person.preferredChannelOther,
+        lastInteractionNote: person.lastInteractionNote,
+      });
+      setFollowUpMessage(message);
+    } catch {
+      setFollowUpMessage(fallbackMessage);
+    } finally {
+      setGeneratingFollowUpMessage(false);
+    }
+  }
+
   function openFollowUpExecution(person = selectedPerson) {
     if (!person) {
       return;
     }
 
+    const fallbackMessage = buildMessageForPerson(person);
     setSelectedPersonId(person.id);
     setFollowUpPerson(person);
-    setFollowUpMessage(buildMessageForPerson(person));
+    setFollowUpMessage(fallbackMessage);
+    void improveFollowUpMessage(person, fallbackMessage);
     void captureAnalyticsEvent("followup_drafted", {
       surface: "people",
       follow_up_state: person.followUpState,
@@ -2211,6 +2238,11 @@ export function PersonProfileScreen({
 
                   <View style={styles.followUpDraftBlock}>
                     <Typography variant="caption">Suggested message</Typography>
+                    {isGeneratingFollowUpMessage ? (
+                      <Typography variant="caption" style={styles.confirmMeta}>
+                        Improving draft for {formatPreferredChannelLabel(followUpPerson.preferredChannel, followUpPerson.preferredChannelOther)}...
+                      </Typography>
+                    ) : null}
                     <TextInput
                       value={followUpMessage}
                       onChangeText={setFollowUpMessage}

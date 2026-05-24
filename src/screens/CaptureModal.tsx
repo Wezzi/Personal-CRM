@@ -27,6 +27,7 @@ import * as ImagePicker from "expo-image-picker";
 import { QRScannerModal } from "../components/QRScannerModal";
 import { scanContactCardImage } from "../lib/cardScan";
 import { openFollowUpInCalendar } from "../lib/calendar";
+import { generateFollowUpDraft } from "../lib/followUpDraft";
 import { parseScannedInput } from "../lib/scan";
 import { transcribeContactAudio } from "../lib/voice";
 
@@ -401,6 +402,8 @@ export function CaptureModal({
   const [customFollowUpDate, setCustomFollowUpDate] = useState("");
   const [hasHydratedSavedDraft, setHasHydratedSavedDraft] = useState(false);
   const [savedDraftForNextAction, setSavedDraftForNextAction] = useState<ParsedPersonDraft | null>(null);
+  const [savedDraftMessage, setSavedDraftMessage] = useState("");
+  const [isGeneratingSavedDraftMessage, setGeneratingSavedDraftMessage] = useState(false);
   const [extractionNotice, setExtractionNotice] = useState<ExtractionNotice | null>(null);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -919,6 +922,8 @@ export function CaptureModal({
     setActiveMethod(initialMethod);
     setFollowUpManuallySet(false);
     setSavedDraftForNextAction(null);
+    setSavedDraftMessage("");
+    setGeneratingSavedDraftMessage(false);
     setExtractionNotice(null);
   }
 
@@ -938,6 +943,9 @@ export function CaptureModal({
 
     if (shouldShowNextActions) {
       setSavedDraftForNextAction(cleanDraft);
+      const fallbackMessage = buildPostCaptureMessage(cleanDraft);
+      setSavedDraftMessage(fallbackMessage);
+      void improveSavedDraftMessage(cleanDraft, fallbackMessage);
       return;
     }
 
@@ -960,10 +968,32 @@ export function CaptureModal({
     }
 
     try {
-      await Clipboard.setStringAsync(buildPostCaptureMessage(savedDraftForNextAction));
+      await Clipboard.setStringAsync(savedDraftMessage || buildPostCaptureMessage(savedDraftForNextAction));
       Alert.alert("Draft copied", "The message is ready to paste into their preferred channel.");
     } catch {
       Alert.alert("Copy failed", "Could not copy the draft message.");
+    }
+  }
+
+  async function improveSavedDraftMessage(targetDraft: ParsedPersonDraft, fallbackMessage: string) {
+    try {
+      setGeneratingSavedDraftMessage(true);
+      const message = await generateFollowUpDraft({
+        name: targetDraft.name,
+        company: targetDraft.company,
+        eventName: targetDraft.event,
+        whatMatters: targetDraft.whatMatters,
+        nextStep: targetDraft.nextStep,
+        relationshipGoal: targetDraft.tags[0] || null,
+        preferredChannel: targetDraft.preferredChannel,
+        preferredChannelOther: targetDraft.preferredChannelOther,
+        lastInteractionNote: targetDraft.rawInput,
+      });
+      setSavedDraftMessage(message);
+    } catch {
+      setSavedDraftMessage(fallbackMessage);
+    } finally {
+      setGeneratingSavedDraftMessage(false);
     }
   }
 
@@ -992,7 +1022,7 @@ export function CaptureModal({
       return;
     }
 
-    const message = buildPostCaptureMessage(savedDraftForNextAction);
+    const message = savedDraftMessage || buildPostCaptureMessage(savedDraftForNextAction);
     const preferredChannel = savedDraftForNextAction.preferredChannel;
 
     try {
@@ -1076,8 +1106,11 @@ export function CaptureModal({
 
         <Card style={styles.nextActionPreviewCard}>
           <Typography variant="caption">Draft message</Typography>
+          {isGeneratingSavedDraftMessage ? (
+            <Typography variant="caption" style={styles.tagSummary}>Improving draft for {savedDraftForNextAction.preferredChannel || "this channel"}...</Typography>
+          ) : null}
           <Typography variant="body" style={styles.previewText}>
-            {buildPostCaptureMessage(savedDraftForNextAction)}
+            {savedDraftMessage || buildPostCaptureMessage(savedDraftForNextAction)}
           </Typography>
         </Card>
 

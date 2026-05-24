@@ -21,6 +21,7 @@ import {
   PersonInsight,
 } from "../lib/crm";
 import { captureAnalyticsEvent } from "../lib/analytics";
+import { generateFollowUpDraft } from "../lib/followUpDraft";
 import { radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 type ContactMethod = "whatsapp" | "sms" | "email" | "linkedin";
@@ -167,6 +168,7 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
   const [isStatusOpen, setStatusOpen] = useState(false);
   const [isTimelineOpen, setTimelineOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
+  const [isGeneratingDraftText, setGeneratingDraftText] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<ContactMethod | null>(null);
   const [customReminderDate, setCustomReminderDate] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
@@ -277,12 +279,37 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
     }
   }
 
+  async function improveDraftText(fallbackMessage: string) {
+    try {
+      setGeneratingDraftText(true);
+      const message = await generateFollowUpDraft({
+        name: person.name,
+        company: person.company,
+        eventName: person.lastEventName,
+        whatMatters: person.whatMatters,
+        nextStep: person.nextStep,
+        relationshipGoal: person.tags[0] || null,
+        relationshipStatus: person.relationshipStatus,
+        preferredChannel: person.preferredChannel,
+        preferredChannelOther: person.preferredChannelOther,
+        lastInteractionNote: person.lastInteractionNote,
+      });
+      setDraftText(message);
+    } catch {
+      setDraftText(fallbackMessage);
+    } finally {
+      setGeneratingDraftText(false);
+    }
+  }
+
   function openDraft() {
     const preferred = person.preferredChannel
       ? contactMethods.find((item) => item.method === person.preferredChannel)
       : null;
+    const fallbackMessage = buildMessageForPerson(person);
     setSelectedMethod(preferred?.method || contactMethods[0]?.method || null);
-    setDraftText(buildMessageForPerson(person));
+    setDraftText(fallbackMessage);
+    void improveDraftText(fallbackMessage);
     closeMenu();
     setDraftOpen(true);
   }
@@ -561,6 +588,9 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
           <Pressable style={StyleSheet.absoluteFill} onPress={closeDraft} />
           <Card style={styles.modalCard}>
             <Typography variant="h2">Draft message</Typography>
+            {isGeneratingDraftText ? (
+              <Typography variant="caption" style={styles.mutedText}>Improving draft for this channel...</Typography>
+            ) : null}
             <View style={styles.methodRow}>
               {contactMethods.map((item) => (
                 <Button
@@ -715,6 +745,9 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     gap: 8,
   },
   helperText: {
+    color: colors.textSecondary,
+  },
+  mutedText: {
     color: colors.textSecondary,
   },
   input: {
