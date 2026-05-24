@@ -61,6 +61,7 @@ type SavedEventEditorState = {
 };
 
 const EVENT_EDITOR_STATE_STORAGE_KEY = "blackbook.event_editor_state";
+const IMPORTANT_TAG_PATTERN = /business|client|hire|hiring|partner|sponsor|investor|intro|meeting|opportunity|lead/i;
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear();
@@ -74,6 +75,28 @@ function getRelativeDateInputValue(offsetDays: number) {
   date.setHours(12, 0, 0, 0);
   date.setDate(date.getDate() + offsetDays);
   return toDateInputValue(date);
+}
+
+function getPersonMemoryReason(person: Awaited<ReturnType<typeof listPeopleInsights>>[number]) {
+  const importantTag = person.tags.find((tag) => IMPORTANT_TAG_PATTERN.test(tag));
+
+  if (person.nextStep.trim()) {
+    return person.nextStep.trim();
+  }
+
+  if (importantTag) {
+    return `${importantTag} signal`;
+  }
+
+  if (person.relationshipStatus.trim()) {
+    return person.relationshipStatus.trim();
+  }
+
+  if (person.whatMatters.trim()) {
+    return person.whatMatters.trim();
+  }
+
+  return "Worth reviewing";
 }
 
 export function EventScreen({
@@ -208,6 +231,61 @@ export function EventScreen({
         followUpsDue: 0,
       }
     : null;
+
+  const selectedEventPeople = useMemo(() => {
+    if (!selectedEvent) {
+      return [];
+    }
+
+    const personIds = new Set(
+      interactions
+        .filter((interaction) => interaction.event_id === selectedEvent.id && interaction.person_id)
+        .map((interaction) => interaction.person_id as string)
+    );
+    const selectedName = selectedEvent.name.trim().toLowerCase();
+
+    return people.filter(
+      (person) =>
+        personIds.has(person.id) ||
+        person.lastEventName?.trim().toLowerCase() === selectedName
+    );
+  }, [interactions, people, selectedEvent]);
+
+  const selectedEventOpenPeople = useMemo(
+    () =>
+      selectedEventPeople
+        .filter(
+          (person) =>
+            person.followUpState === "dueToday" ||
+            person.followUpState === "overdue" ||
+            !person.nextStep.trim() ||
+            !person.nextFollowUpAt
+        )
+        .slice(0, 6),
+    [selectedEventPeople]
+  );
+
+  const selectedEventImportantPeople = useMemo(
+    () =>
+      selectedEventPeople
+        .map((person) => {
+          const importantTag = person.tags.some((tag) => IMPORTANT_TAG_PATTERN.test(tag));
+          const score =
+            (person.priority === "high" ? 5 : 0) +
+            (importantTag ? 4 : 0) +
+            (person.nextStep.trim() ? 3 : 0) +
+            (person.followUpState === "dueToday" || person.followUpState === "overdue" ? 3 : 0) +
+            (person.whatMatters.trim().length > 30 ? 2 : 0) +
+            (!person.nextFollowUpAt ? 1 : 0);
+
+          return { person, score };
+        })
+        .filter((entry) => entry.score > 0)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 5)
+        .map((entry) => entry.person),
+    [selectedEventPeople]
+  );
 
   const currentEventInsight = useMemo(() => {
     if (!currentEvent) {
@@ -853,6 +931,59 @@ export function EventScreen({
               <Typography variant="body" style={styles.secondaryText}>
                 Use this as the desktop memory for the event: who you met, what you promised, and what still needs a clean next move.
               </Typography>
+              <View style={styles.memorySection}>
+                <View style={styles.sectionHeader}>
+                  <Typography variant="caption">People you should not forget</Typography>
+                  <Typography variant="body" style={styles.secondaryText}>
+                    Prioritised by strong goal, promise made, still-open conversation, or rich context.
+                  </Typography>
+                </View>
+                {selectedEventImportantPeople.length ? (
+                  selectedEventImportantPeople.map((person) => (
+                    <View key={person.id} style={styles.memoryPersonRow}>
+                      <View style={styles.eventCopy}>
+                        <Typography variant="h2">{person.name}</Typography>
+                        <Typography variant="caption" style={styles.secondaryText}>
+                          {[person.company, person.tags[0]].filter(Boolean).join(" · ") || "No company yet"}
+                        </Typography>
+                      </View>
+                      <Typography variant="body" style={styles.memoryReason} numberOfLines={2}>
+                        {getPersonMemoryReason(person)}
+                      </Typography>
+                    </View>
+                  ))
+                ) : (
+                  <Typography variant="body" style={styles.secondaryText}>No standout people yet. Capture a few more conversations first.</Typography>
+                )}
+              </View>
+              <View style={styles.memorySection}>
+                <View style={styles.sectionHeader}>
+                  <Typography variant="caption">Conversations still open</Typography>
+                  <Typography variant="body" style={styles.secondaryText}>
+                    Missing next moves, missing reminders, or conversations due now.
+                  </Typography>
+                </View>
+                {selectedEventOpenPeople.length ? (
+                  selectedEventOpenPeople.map((person) => (
+                    <View key={person.id} style={styles.openLoopRow}>
+                      <Typography variant="h2">{person.name}</Typography>
+                      <Typography variant="caption" style={styles.secondaryText}>
+                        {!person.nextStep.trim()
+                          ? "No next move"
+                          : !person.nextFollowUpAt
+                            ? "No reminder"
+                            : person.followUpState === "overdue"
+                              ? "Still open"
+                              : person.followUpState === "dueToday"
+                                ? "Today"
+                                : "Needs review"}
+                      </Typography>
+                    </View>
+                  ))
+                ) : (
+                  <Typography variant="body" style={styles.secondaryText}>No open loops for this event right now.</Typography>
+                )}
+              </View>
               <View style={styles.featureActions}>
                 <Button
                   label={isCurrentEvent(selectedEvent) ? "End event" : "Set current"}
@@ -868,7 +999,7 @@ export function EventScreen({
                   size="compact"
                   loading={isCopyingSlackCanvas}
                 />
-                {canDirectSlackCanvas ? (
+                {!isCompactLayout && canDirectSlackCanvas ? (
                   <Button
                     label="Send to Slack"
                     onPress={() => void handleExportSlackCanvas(selectedEvent)}
@@ -878,7 +1009,7 @@ export function EventScreen({
                     loading={isExportingSlackCanvas}
                   />
                 ) : null}
-                {canExportCsv ? (
+                {!isCompactLayout && canExportCsv ? (
                   <Button
                     label="Export event CSV"
                     onPress={() => void handleExportCsv(selectedEvent)}
@@ -888,7 +1019,7 @@ export function EventScreen({
                     loading={isExportingCsv}
                   />
                 ) : null}
-                {canManageCampaignLinks ? (
+                {!isCompactLayout && canManageCampaignLinks ? (
                   <Button
                     label="Copy pilot link"
                     onPress={() => void handleCopyCampaignLink(selectedEvent)}
@@ -1212,6 +1343,34 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     flex: 1,
     minWidth: 140,
     gap: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+    padding: 12,
+  },
+  memorySection: {
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 12,
+  },
+  memoryPersonRow: {
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+    padding: 12,
+  },
+  memoryReason: {
+    color: colors.textPrimary,
+  },
+  openLoopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 16,

@@ -1093,12 +1093,19 @@ export function buildReconnectDraft(input: {
   followUp?: string;
 }) {
   const event = input.eventName || "the event";
-  const note = input.lastInteractionNote?.trim() || "our chat";
+  const note = input.lastInteractionNote?.trim() || "";
   const followUp = input.followUp?.trim() && input.followUp.trim().toLowerCase() !== "none yet"
     ? input.followUp.trim()
-    : "catch up properly";
+    : "";
 
-  return `Hey ${input.name}, great meeting you at ${event}. Picking up from ${note}. Wanted to follow up on ${followUp}.`;
+  const contextLine = note
+    ? `I was thinking about what you mentioned: ${note}.`
+    : "I enjoyed the conversation and wanted to keep the thread warm.";
+  const nextMoveLine = followUp
+    ? `Picking up on ${followUp}, would it make sense to continue from there?`
+    : "Would be good to continue the conversation when you have a moment.";
+
+  return `Hey ${input.name}, great meeting you at ${event}. ${contextLine} ${nextMoveLine}`;
 }
 
 export function formatDateTime(value: string) {

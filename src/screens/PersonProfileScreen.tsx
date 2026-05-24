@@ -1617,55 +1617,59 @@ export function PersonProfileScreen({
           <Card>
             <Typography variant="caption">Find someone</Typography>
 
-            <Typography variant="caption" style={styles.subSectionLabel}>
-              Event type
-            </Typography>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {EVENT_CATEGORY_OPTIONS.map((option) => (
-                <Button
-                  key={option.value}
-                  label={option.label}
-                  onPress={() => setCategoryMode(option.value)}
-                  variant={categoryMode === option.value ? "primary" : "ghost"}
-                  fullWidth={false}
-                  size="compact"
-                />
-              ))}
-            </ScrollView>
+            {!isCompactLayout ? (
+              <>
+                <Typography variant="caption" style={styles.subSectionLabel}>
+                  Event type
+                </Typography>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                  {EVENT_CATEGORY_OPTIONS.map((option) => (
+                    <Button
+                      key={option.value}
+                      label={option.label}
+                      onPress={() => setCategoryMode(option.value)}
+                      variant={categoryMode === option.value ? "primary" : "ghost"}
+                      fullWidth={false}
+                      size="compact"
+                    />
+                  ))}
+                </ScrollView>
 
-            <Typography variant="caption" style={styles.subSectionLabel}>
-              Sort order
-            </Typography>
-            <View style={styles.controlRow}>
-              <Button
-                label="Recent"
-                onPress={() => setSortMode("recent")}
-                variant={sortMode === "recent" ? "primary" : "ghost"}
-                fullWidth={false}
-                size="compact"
-              />
-              <Button
-                label="Stale"
-                onPress={() => setSortMode("stale")}
-                variant={sortMode === "stale" ? "primary" : "ghost"}
-                fullWidth={false}
-                size="compact"
-              />
-              <Button
-                label="A-Z"
-                onPress={() => setSortMode("name")}
-                variant={sortMode === "name" ? "primary" : "ghost"}
-                fullWidth={false}
-                size="compact"
-              />
-              <Button
-                label="Most logged"
-                onPress={() => setSortMode("frequency")}
-                variant={sortMode === "frequency" ? "primary" : "ghost"}
-                fullWidth={false}
-                size="compact"
-              />
-            </View>
+                <Typography variant="caption" style={styles.subSectionLabel}>
+                  Sort order
+                </Typography>
+                <View style={styles.controlRow}>
+                  <Button
+                    label="Recent"
+                    onPress={() => setSortMode("recent")}
+                    variant={sortMode === "recent" ? "primary" : "ghost"}
+                    fullWidth={false}
+                    size="compact"
+                  />
+                  <Button
+                    label="Stale"
+                    onPress={() => setSortMode("stale")}
+                    variant={sortMode === "stale" ? "primary" : "ghost"}
+                    fullWidth={false}
+                    size="compact"
+                  />
+                  <Button
+                    label="A-Z"
+                    onPress={() => setSortMode("name")}
+                    variant={sortMode === "name" ? "primary" : "ghost"}
+                    fullWidth={false}
+                    size="compact"
+                  />
+                  <Button
+                    label="Most logged"
+                    onPress={() => setSortMode("frequency")}
+                    variant={sortMode === "frequency" ? "primary" : "ghost"}
+                    fullWidth={false}
+                    size="compact"
+                  />
+                </View>
+              </>
+            ) : null}
 
             <Typography variant="caption" style={styles.subSectionLabel}>
               Search
@@ -1680,28 +1684,32 @@ export function PersonProfileScreen({
               autoCorrect={false}
             />
 
-            <Typography variant="caption" style={styles.subSectionLabel}>
-              Tags
-            </Typography>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              <Button
-                label="All tags"
-                onPress={() => setSelectedTag("all")}
-                variant={selectedTag === "all" ? "primary" : "ghost"}
-                fullWidth={false}
-                size="compact"
-              />
-              {availableTags.map((tag) => (
-                <Button
-                  key={tag}
-                  label={tag}
-                  onPress={() => setSelectedTag(tag)}
-                  variant={selectedTag === tag ? "primary" : "ghost"}
-                  fullWidth={false}
-                  size="compact"
-                />
-              ))}
-            </ScrollView>
+            {!isCompactLayout ? (
+              <>
+                <Typography variant="caption" style={styles.subSectionLabel}>
+                  Tags
+                </Typography>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                  <Button
+                    label="All tags"
+                    onPress={() => setSelectedTag("all")}
+                    variant={selectedTag === "all" ? "primary" : "ghost"}
+                    fullWidth={false}
+                    size="compact"
+                  />
+                  {availableTags.map((tag) => (
+                    <Button
+                      key={tag}
+                      label={tag}
+                      onPress={() => setSelectedTag(tag)}
+                      variant={selectedTag === tag ? "primary" : "ghost"}
+                      fullWidth={false}
+                      size="compact"
+                    />
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
           </Card>
 
           {!isCompactLayout && selectedPerson ? (

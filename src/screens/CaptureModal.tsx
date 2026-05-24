@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -25,6 +26,7 @@ import * as ImagePicker from "expo-image-picker";
 
 import { QRScannerModal } from "../components/QRScannerModal";
 import { scanContactCardImage } from "../lib/cardScan";
+import { openFollowUpInCalendar } from "../lib/calendar";
 import { parseScannedInput } from "../lib/scan";
 import { transcribeContactAudio } from "../lib/voice";
 
@@ -63,6 +65,25 @@ export type ParsedPersonDraft = {
   nextFollowUpAt: string;
   followUpPreset: FollowUpPreset | "";
   rawInput: string;
+};
+
+type ExtractedFieldKey =
+  | "name"
+  | "company"
+  | "whatMatters"
+  | "nextStep"
+  | "linkedinUrl"
+  | "email"
+  | "phoneNumber"
+  | "preferredChannel"
+  | "tags"
+  | "nextFollowUpAt";
+
+type ExtractionSource = "voice" | "scan" | "quick note";
+
+type ExtractionNotice = {
+  source: ExtractionSource;
+  fields: ExtractedFieldKey[];
 };
 
 const emptyDraft: ParsedPersonDraft = {
@@ -104,6 +125,19 @@ const goalTagOptions = [
   "Other",
 ] as const;
 const goalTagSet = new Set<string>(goalTagOptions);
+
+const extractedFieldLabels: Record<ExtractedFieldKey, string> = {
+  name: "Name",
+  company: "Company",
+  whatMatters: "Why",
+  nextStep: "Next move",
+  linkedinUrl: "LinkedIn",
+  email: "Email",
+  phoneNumber: "Phone",
+  preferredChannel: "Best channel",
+  tags: "Goal",
+  nextFollowUpAt: "Reminder",
+};
 
 export type LockedEventDraft = {
   name: string;
@@ -164,6 +198,37 @@ function buildPostCaptureMessage(draft: ParsedPersonDraft) {
   const eventLine = event && event !== "No event" ? ` at ${event}` : "";
 
   return `Hey ${name}, great meeting you${eventLine}. Picking up from ${context}. Would be good to continue the conversation.`;
+}
+
+function collectExtractedFields(input: Partial<ParsedPersonDraft>) {
+  const fields: ExtractedFieldKey[] = [];
+
+  ([
+    "name",
+    "company",
+    "whatMatters",
+    "nextStep",
+    "linkedinUrl",
+    "email",
+    "phoneNumber",
+    "preferredChannel",
+    "nextFollowUpAt",
+  ] as const).forEach((field) => {
+    if (typeof input[field] === "string" && input[field]?.trim()) {
+      fields.push(field);
+    }
+  });
+
+  if (input.tags?.length) {
+    fields.push("tags");
+  }
+
+  return fields;
+}
+
+function normalizePhoneForUrl(value: string) {
+  const digits = value.replace(/[^\d+]/g, "").replace(/^00/, "+");
+  return digits.startsWith("+") ? digits.slice(1) : digits;
 }
 
 function getSuggestedPresetLabel(category: EventCategory | "" | null | undefined) {
@@ -336,6 +401,7 @@ export function CaptureModal({
   const [customFollowUpDate, setCustomFollowUpDate] = useState("");
   const [hasHydratedSavedDraft, setHasHydratedSavedDraft] = useState(false);
   const [savedDraftForNextAction, setSavedDraftForNextAction] = useState<ParsedPersonDraft | null>(null);
+  const [extractionNotice, setExtractionNotice] = useState<ExtractionNotice | null>(null);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -410,6 +476,7 @@ export function CaptureModal({
       setIsScanChoiceVisible(false);
       setIsQrScannerVisible(false);
       setSavedDraftForNextAction(null);
+      setExtractionNotice(null);
       setHasHydratedSavedDraft(true);
     }
 
@@ -465,8 +532,46 @@ export function CaptureModal({
     })),
     []
   );
+  const extractedFieldSet = useMemo(
+    () => new Set(extractionNotice?.fields || []),
+    [extractionNotice]
+  );
+
+  function getFieldInputStyle(field: ExtractedFieldKey) {
+    return [styles.fieldInput, extractedFieldSet.has(field) ? styles.extractedFieldInput : null];
+  }
+
+  function renderExtractionNotice() {
+    if (!extractionNotice || extractionNotice.fields.length === 0) {
+      return null;
+    }
+
+    return (
+      <Card style={styles.extractionCard}>
+        <Typography variant="caption">Draft filled from {extractionNotice.source}</Typography>
+        <Typography variant="body" style={styles.helperText}>
+          Review the highlighted fields. Correct anything that feels off.
+        </Typography>
+        <View style={styles.chipRow}>
+          {extractionNotice.fields.map((field) => (
+            <View key={field} style={styles.extractionPill}>
+              <Typography variant="caption" style={styles.extractionPillText}>{extractedFieldLabels[field]}</Typography>
+            </View>
+          ))}
+        </View>
+      </Card>
+    );
+  }
 
   function updateField(field: keyof ParsedPersonDraft, value: string) {
+    setExtractionNotice((current) =>
+      current
+        ? {
+            ...current,
+            fields: current.fields.filter((item) => item !== field),
+          }
+        : null
+    );
     setDraft((current) => ({
       ...current,
       [field]: value,
@@ -523,6 +628,11 @@ export function CaptureModal({
         mimeType: "audio/m4a",
       });
 
+      const extractedFields = collectExtractedFields({
+        ...result.draft,
+        whatMatters: result.draft.whatMatters?.trim() || result.transcript?.trim(),
+      });
+
       setDraft((current) => ({
         ...current,
         ...result.draft,
@@ -531,6 +641,11 @@ export function CaptureModal({
           result.transcript?.trim() ||
           current.whatMatters,
       }));
+
+      setExtractionNotice({
+        source: "voice",
+        fields: extractedFields.length ? extractedFields : ["whatMatters"],
+      });
 
       setActiveMethod("manual");
     } catch (error) {
@@ -587,6 +702,8 @@ export function CaptureModal({
         fileName: asset.fileName || "contact-card.jpg",
       });
 
+      const extractedFields = collectExtractedFields(scanResult.draft);
+
       setDraft((current) => ({
         ...current,
         name: scanResult.draft.name || current.name,
@@ -598,6 +715,11 @@ export function CaptureModal({
         whatMatters: scanResult.draft.whatMatters || current.whatMatters,
         rawInput: scanResult.rawText || current.rawInput,
       }));
+
+      setExtractionNotice({
+        source: "scan",
+        fields: extractedFields.length ? extractedFields : ["name", "company"],
+      });
 
       setActiveMethod("manual");
     } catch (error) {
@@ -639,6 +761,7 @@ export function CaptureModal({
 
   function handleScanResult(value: string) {
     const parsed = parseScannedInput(value, lockedEvent);
+    const extractedFields = collectExtractedFields(parsed);
 
     setDraft((current) => ({
       ...current,
@@ -652,6 +775,10 @@ export function CaptureModal({
       rawInput: value,
     }));
 
+    setExtractionNotice({
+      source: "scan",
+      fields: extractedFields.length ? extractedFields : ["linkedinUrl"],
+    });
     setActiveMethod("manual");
     setIsQrScannerVisible(false);
   }
@@ -662,6 +789,8 @@ export function CaptureModal({
       Alert.alert("Nothing to parse", "Paste a LinkedIn URL, email signature, or copied contact text first.");
       return;
     }
+
+    const extractedFields = collectExtractedFields(parsed);
 
     setDraft((current) => ({
       ...current,
@@ -674,6 +803,10 @@ export function CaptureModal({
       whatMatters: parsed.whatMatters ? parsed.whatMatters : current.whatMatters,
       rawInput: pasteInput,
     }));
+    setExtractionNotice({
+      source: "quick note",
+      fields: extractedFields.length ? extractedFields : ["whatMatters"],
+    });
     setActiveMethod("manual");
   }
 
@@ -786,6 +919,7 @@ export function CaptureModal({
     setActiveMethod(initialMethod);
     setFollowUpManuallySet(false);
     setSavedDraftForNextAction(null);
+    setExtractionNotice(null);
   }
 
   async function handleSave(addAnother = false) {
@@ -833,6 +967,94 @@ export function CaptureModal({
     }
   }
 
+  function getPostSavePrimaryAction(draft: ParsedPersonDraft) {
+    if (draft.preferredChannel === "whatsapp" && draft.phoneNumber.trim()) {
+      return "Open WhatsApp";
+    }
+
+    if (draft.preferredChannel === "email" && draft.email.trim()) {
+      return "Open Email";
+    }
+
+    if (draft.preferredChannel === "linkedin" && draft.linkedinUrl.trim()) {
+      return "Copy + Open LinkedIn";
+    }
+
+    if (draft.preferredChannel === "phone" && draft.phoneNumber.trim()) {
+      return "Open Text";
+    }
+
+    return "Copy message";
+  }
+
+  async function handlePostSavePrimaryAction() {
+    if (!savedDraftForNextAction) {
+      return;
+    }
+
+    const message = buildPostCaptureMessage(savedDraftForNextAction);
+    const preferredChannel = savedDraftForNextAction.preferredChannel;
+
+    try {
+      if (preferredChannel === "whatsapp" && savedDraftForNextAction.phoneNumber.trim()) {
+        const phone = normalizePhoneForUrl(savedDraftForNextAction.phoneNumber);
+        await Linking.openURL(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`);
+        return;
+      }
+
+      if (preferredChannel === "email" && savedDraftForNextAction.email.trim()) {
+        const subject = savedDraftForNextAction.event && savedDraftForNextAction.event !== "No event"
+          ? `Following up from ${savedDraftForNextAction.event}`
+          : `Following up with ${savedDraftForNextAction.name}`;
+        await Linking.openURL(
+          `mailto:${encodeURIComponent(savedDraftForNextAction.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`
+        );
+        return;
+      }
+
+      if (preferredChannel === "linkedin" && savedDraftForNextAction.linkedinUrl.trim()) {
+        await Clipboard.setStringAsync(message);
+        await Linking.openURL(savedDraftForNextAction.linkedinUrl);
+        Alert.alert("Message copied", "Paste the draft into LinkedIn when the profile opens.");
+        return;
+      }
+
+      if (preferredChannel === "phone" && savedDraftForNextAction.phoneNumber.trim()) {
+        await Clipboard.setStringAsync(message);
+        await Linking.openURL(`sms:${savedDraftForNextAction.phoneNumber}?body=${encodeURIComponent(message)}`);
+        return;
+      }
+
+      await handleCopySavedDraftMessage();
+    } catch {
+      await Clipboard.setStringAsync(message);
+      Alert.alert("Message copied", "Could not open the app, so the draft is copied instead.");
+    }
+  }
+
+  async function handlePostSaveCalendarAction() {
+    if (!savedDraftForNextAction?.nextFollowUpAt) {
+      Alert.alert("No reminder yet", "Open this person later to add a reminder.");
+      return;
+    }
+
+    try {
+      await openFollowUpInCalendar(
+        {
+          name: savedDraftForNextAction.name,
+          company: savedDraftForNextAction.company,
+          nextFollowUpAt: savedDraftForNextAction.nextFollowUpAt,
+          whatMatters: savedDraftForNextAction.whatMatters,
+          nextStep: savedDraftForNextAction.nextStep,
+          linkedinUrl: savedDraftForNextAction.linkedinUrl,
+        },
+        Platform.OS === "web" ? "ics" : "device"
+      );
+    } catch (error) {
+      Alert.alert("Calendar failed", error instanceof Error ? error.message : "Could not add this reminder.");
+    }
+  }
+
   function handleSavedDraftAddAnother() {
     resetForAnotherCapture();
   }
@@ -860,17 +1082,13 @@ export function CaptureModal({
         </Card>
 
         <View style={styles.postSaveActionGrid}>
-          <Button label="Draft message" onPress={() => void handleCopySavedDraftMessage()} />
+          <Button label={getPostSavePrimaryAction(savedDraftForNextAction)} onPress={() => void handlePostSavePrimaryAction()} />
+          {getPostSavePrimaryAction(savedDraftForNextAction) !== "Copy message" ? (
+            <Button label="Copy message" onPress={() => void handleCopySavedDraftMessage()} variant="ghost" />
+          ) : null}
           <Button
-            label={savedDraftForNextAction.nextFollowUpAt ? `Reminder: ${formatFollowUpDate(savedDraftForNextAction.nextFollowUpAt)}` : "Add reminder later"}
-            onPress={() => {
-              Alert.alert(
-                savedDraftForNextAction.nextFollowUpAt ? "Reminder saved" : "No reminder yet",
-                savedDraftForNextAction.nextFollowUpAt
-                  ? "This date is saved on the person. You can add it to calendar from their card."
-                  : "Open this person later to add a reminder."
-              );
-            }}
+            label={savedDraftForNextAction.nextFollowUpAt ? `Add reminder: ${formatFollowUpDate(savedDraftForNextAction.nextFollowUpAt)}` : "Add reminder later"}
+            onPress={() => void handlePostSaveCalendarAction()}
             variant="ghost"
           />
           <Button label="Save & add another" onPress={handleSavedDraftAddAnother} variant="ghost" />
@@ -1024,6 +1242,8 @@ export function CaptureModal({
               </Card>
             ) : null}
 
+            {renderExtractionNotice()}
+
             <Card style={styles.sectionCard}>
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Who + why</Typography>
@@ -1038,7 +1258,7 @@ export function CaptureModal({
                   autoFocus={activeMethod !== "paste"}
                   placeholder="Sarah"
                   placeholderTextColor={colors.textTertiary}
-                  style={styles.fieldInput}
+                  style={getFieldInputStyle("name")}
                   value={draft.name}
                   onChangeText={(value) => updateField("name", value)}
                 />
@@ -1049,7 +1269,7 @@ export function CaptureModal({
                 <TextInput
                   placeholder="Stripe"
                   placeholderTextColor={colors.textTertiary}
-                  style={styles.fieldInput}
+                  style={getFieldInputStyle("company")}
                   value={draft.company}
                   onChangeText={(value) => updateField("company", value)}
                 />
@@ -1060,14 +1280,14 @@ export function CaptureModal({
                 <TextInput
                   placeholder="Investor in climate, hiring designers, runs the community..."
                   placeholderTextColor={colors.textTertiary}
-                  style={[styles.fieldInput, styles.fastTextAreaInput]}
+                  style={[...getFieldInputStyle("whatMatters"), styles.fastTextAreaInput]}
                   value={draft.whatMatters}
                   onChangeText={(value) => updateField("whatMatters", value)}
                   multiline
                 />
               </View>
 
-              <View style={styles.chipSection}>
+                <View style={[styles.chipSection, extractedFieldSet.has("tags") ? styles.extractedSection : null]}>
                 <Typography variant="caption">Outcome goal</Typography>
                 <View style={styles.chipRow}>
                   {goalTagOptions.map((tag) => (
@@ -1088,7 +1308,7 @@ export function CaptureModal({
                 ) : null}
               </View>
 
-              <View style={styles.chipSection}>
+              <View style={[styles.chipSection, extractedFieldSet.has("preferredChannel") ? styles.extractedSection : null]}>
                 <Typography variant="caption">Best follow-up channel</Typography>
                 <View style={styles.chipRow}>
                   {preferredChannelOptions.map((option) => (
@@ -1106,7 +1326,7 @@ export function CaptureModal({
                   <TextInput
                     placeholder="Instagram, Discord, Telegram..."
                     placeholderTextColor={colors.textTertiary}
-                    style={[styles.fieldInput, styles.inlineInputTop]}
+                    style={[...getFieldInputStyle("preferredChannel"), styles.inlineInputTop]}
                     value={draft.preferredChannelOther}
                     onChangeText={(value) => updateField("preferredChannelOther", value)}
                     autoCapitalize="none"
@@ -1129,7 +1349,7 @@ export function CaptureModal({
                 <TextInput
                   placeholder="Send deck, make intro, ask about the role..."
                   placeholderTextColor={colors.textTertiary}
-                  style={[styles.fieldInput, styles.fastTextAreaInput]}
+                  style={[...getFieldInputStyle("nextStep"), styles.fastTextAreaInput]}
                   value={draft.nextStep}
                   onChangeText={(value) => updateField("nextStep", value)}
                   multiline
@@ -1149,7 +1369,7 @@ export function CaptureModal({
                   <TextInput
                     placeholder="linkedin.com/in/sarah"
                     placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
+                    style={getFieldInputStyle("linkedinUrl")}
                     value={draft.linkedinUrl}
                     onChangeText={(value) => updateField("linkedinUrl", value)}
                     autoCapitalize="none"
@@ -1161,7 +1381,7 @@ export function CaptureModal({
                   <TextInput
                     placeholder="sarah@company.com"
                     placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
+                    style={getFieldInputStyle("email")}
                     value={draft.email}
                     onChangeText={(value) => updateField("email", value)}
                     autoCapitalize="none"
@@ -1174,7 +1394,7 @@ export function CaptureModal({
                   <TextInput
                     placeholder="+44 7700 900123"
                     placeholderTextColor={colors.textTertiary}
-                    style={styles.fieldInput}
+                    style={getFieldInputStyle("phoneNumber")}
                     value={draft.phoneNumber}
                     onChangeText={(value) => updateField("phoneNumber", value)}
                     keyboardType="phone-pad"
@@ -1259,7 +1479,7 @@ export function CaptureModal({
                     <TextInput
                       placeholder="YYYY-MM-DD"
                       placeholderTextColor={colors.textTertiary}
-                      style={styles.fieldInput}
+                      style={getFieldInputStyle("nextFollowUpAt")}
                       value={customFollowUpDate}
                       onChangeText={updateCustomFollowUpDate}
                       autoCapitalize="none"
@@ -1398,6 +1618,22 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     backgroundColor: colors.surfaceMuted,
     padding: 14,
   },
+  extractionCard: {
+    gap: 10,
+    borderColor: colors.primaryAction,
+    backgroundColor: colors.successSoft,
+  },
+  extractionPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  extractionPillText: {
+    color: colors.textPrimary,
+  },
   fieldBlock: {
     gap: 8,
   },
@@ -1425,6 +1661,18 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     color: colors.textPrimary,
     fontSize: 16,
     lineHeight: 22,
+  },
+  extractedFieldInput: {
+    borderColor: colors.primaryAction,
+    borderWidth: 2,
+    backgroundColor: colors.successSoft,
+  },
+  extractedSection: {
+    borderWidth: 1,
+    borderColor: colors.primaryAction,
+    borderRadius: 18,
+    backgroundColor: colors.successSoft,
+    padding: 12,
   },
   textAreaInput: {
     minHeight: 96,

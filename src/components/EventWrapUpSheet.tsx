@@ -50,6 +50,48 @@ function belongsToCurrentEvent(person: PersonInsight, event: CurrentEventValue) 
 
 }
 
+const IMPORTANT_TAG_PATTERN = /business|client|hire|hiring|partner|sponsor|investor|intro|meeting|opportunity|lead/i;
+
+function getMemoryReason(person: PersonInsight) {
+  const importantTag = person.tags.find((tag) => IMPORTANT_TAG_PATTERN.test(tag));
+
+  if (person.nextStep.trim()) {
+    return person.nextStep.trim();
+  }
+
+  if (importantTag) {
+    return `${importantTag} opportunity`;
+  }
+
+  if (person.followUpState === "dueToday" || person.followUpState === "overdue") {
+    return "Conversation still open";
+  }
+
+  if (!person.nextFollowUpAt) {
+    return "No reminder set";
+  }
+
+  if (person.whatMatters.trim()) {
+    return person.whatMatters.trim();
+  }
+
+  return "Worth reviewing before this fades";
+}
+
+function scorePersonForWrapUp(person: PersonInsight) {
+  const importantTag = person.tags.some((tag) => IMPORTANT_TAG_PATTERN.test(tag));
+
+  return (
+    (person.priority === "high" ? 5 : 0) +
+    (importantTag ? 4 : 0) +
+    (person.nextStep.trim() ? 3 : 0) +
+    (person.followUpState === "dueToday" || person.followUpState === "overdue" ? 3 : 0) +
+    (!person.nextFollowUpAt ? 2 : 0) +
+    (!person.preferredChannel ? 1 : 0) +
+    (person.whatMatters.trim().length > 30 ? 2 : 0)
+  );
+}
+
 
 
 export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose, onExitEventMode }: EventWrapUpSheetProps) {
@@ -128,7 +170,9 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
   const peopleYouShouldntForget = useMemo(() => {
     return people
-      .filter((person) => person.priority === "high" || person.nextStep.trim() || person.whatMatters.trim())
+      .map((person) => ({ person, score: scorePersonForWrapUp(person) }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score)
       .slice(0, 5);
   }, [people]);
 
@@ -389,7 +433,7 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
                   </Typography>
                 </View>
 
-                {peopleYouShouldntForget.map((person) => (
+                {peopleYouShouldntForget.map(({ person }) => (
                   <Card key={person.id} style={styles.personCard}>
                     <View style={styles.personHeader}>
                       <View style={styles.personCopy}>
@@ -401,7 +445,7 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
                       <PersonQuickActionsButton person={person} onChanged={() => void loadPeople(activeEvent)} />
                     </View>
                     <Typography variant="body" numberOfLines={1} style={styles.metaText}>
-                      {person.nextStep || person.whatMatters || "Worth remembering."}
+                      {getMemoryReason(person)}
                     </Typography>
                   </Card>
                 ))}
