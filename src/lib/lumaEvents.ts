@@ -13,10 +13,13 @@ export type LumaSuggestedEvent = {
   endsAt: string | null;
   location: string | null;
   sourceUrl: string | null;
+  isActiveNow?: boolean;
+  startsSoon?: boolean;
 };
 
 export type LumaEventSuggestion = {
   event: LumaSuggestedEvent;
+  suggestions: LumaSuggestedEvent[];
   count: number;
   source: "calendar-feed" | "calendar-link-discovered";
   isActiveNow: boolean;

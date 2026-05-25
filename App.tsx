@@ -7,7 +7,7 @@ import { Typography } from "./src/components/ui/Typography";
 import { CurrentEventSheet, CurrentEventValue } from "./src/components/CurrentEventSheet";
 import { EventWrapUpSheet } from "./src/components/EventWrapUpSheet";
 import { LiveEventBadge } from "./src/components/LiveEventBadge";
-import { EventCategory, formatCategoryLabel, normalizeEventDate } from "./src/lib/crm";
+import { EventCategory, formatCategoryLabel, getOrCreateEvent, normalizeEventDate, updateEventEndedAt } from "./src/lib/crm";
 import { ensureProfileForUser, getCurrentUsername, signOutCurrentUser } from "./src/lib/auth";
 import {
   captureAnalyticsEvent,
@@ -63,6 +63,15 @@ function formatCurrentEventChipLabel(event: CurrentEventValue | null) {
   return event.eventDate?.trim()
     ? `Current: ${event.name} · ${typeLabel} · ${event.eventDate.trim()}`
     : `Current: ${event.name} · ${typeLabel}`;
+}
+
+function compactEventLabel(event: CurrentEventValue | null, maxLength = 34) {
+  if (!event) {
+    return "Set Current Event";
+  }
+
+  const name = event.name.length > maxLength ? `${event.name.slice(0, maxLength - 1).trim()}...` : event.name;
+  return `Current: ${name}`;
 }
 
 function getWelcomeName(user: NonNullable<ReturnType<typeof useAuth>["user"]> | null, username: string | null) {
@@ -614,7 +623,26 @@ useEffect(() => {
     }
   }
 
+  async function recordCurrentEventEnded() {
+    if (!currentEvent || !activeUser) {
+      return;
+    }
+
+    try {
+      const userId = await ensureSessionUserId();
+      const event = await getOrCreateEvent(userId, currentEvent.name, currentEvent.category, currentEvent.eventDate || null);
+      await updateEventEndedAt({ userId, eventId: event.id });
+      void captureAnalyticsEvent("event_ended", {
+        event_name: currentEvent.name,
+        event_category: currentEvent.customCategoryLabel || currentEvent.category,
+      });
+    } catch {
+      // Ending local event mode should still work if the timestamp sync fails.
+    }
+  }
+
   function exitCurrentEventMode() {
+    void recordCurrentEventEnded();
     setCurrentEvent(null);
     setEventWrapUpOpen(false);
   }
@@ -660,6 +688,7 @@ useEffect(() => {
   }
 
   function handleClearCurrentEvent() {
+    void recordCurrentEventEnded();
     setCurrentEvent(null);
     setCurrentEventOpen(false);
     void AsyncStorage.setItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY, "false");
@@ -818,11 +847,12 @@ useEffect(() => {
         <View style={styles.currentEventBar}>
           <LiveEventBadge eventDate={currentEvent.eventDate} />
           <Button
-            label={formatCurrentEventChipLabel(currentEvent)}
+            label={isCompactLayout ? compactEventLabel(currentEvent, 28) : formatCurrentEventChipLabel(currentEvent)}
             onPress={openCurrentEventSheet}
             variant="ghost"
             fullWidth={false}
             size="compact"
+            style={styles.currentEventBarButton}
           />
           <Button
             label="Wrap up"
@@ -832,7 +862,7 @@ useEffect(() => {
             size="compact"
           />
           <Button
-            label="Exit event mode"
+            label="End event"
             onPress={confirmExitCurrentEventMode}
             variant="ghost"
             fullWidth={false}
@@ -1116,6 +1146,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   currentEventButton: {
     maxWidth: 170,
+  },
+  currentEventBarButton: {
+    maxWidth: 320,
+    flexShrink: 1,
   },
   tutorialOverlay: {
     ...StyleSheet.absoluteFillObject,

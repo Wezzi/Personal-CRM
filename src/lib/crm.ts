@@ -9,6 +9,7 @@ export type PersonRow = {
   linkedin_url: string | null;
   email: string | null;
   name: string | null;
+  next_follow_up_at: string | null;
   phone_number: string | null;
   priority: PersonPriority;
   preferred_channel: PreferredChannel | null;
@@ -19,6 +20,7 @@ export type PersonRow = {
 
 export type EventRow = {
   category: EventCategory | null;
+  ended_at: string | null;
   event_date: string | null;
   id: string;
   name: string;
@@ -385,7 +387,7 @@ export async function getOrCreateEvent(
 
   const { data: existing, error: findError } = await client
     .from("events")
-    .select("id,name,category,event_date,created_at")
+    .select("id,name,category,event_date,ended_at,created_at")
     .eq("user_id", userId)
     .ilike("name", normalizedName)
     .maybeSingle();
@@ -409,7 +411,7 @@ export async function getOrCreateEvent(
         .update(updatePayload)
         .eq("user_id", userId)
         .eq("id", existing.id)
-        .select("id,name,category,event_date,created_at")
+        .select("id,name,category,event_date,ended_at,created_at")
         .single();
 
       assertNoError(updateError);
@@ -427,7 +429,7 @@ export async function getOrCreateEvent(
       category: normalizedCategory,
       event_date: normalizedEventDate,
     })
-    .select("id,name,category,event_date,created_at")
+    .select("id,name,category,event_date,ended_at,created_at")
     .single();
 
   assertNoError(insertError);
@@ -444,7 +446,8 @@ export async function createPerson(
   preferredChannel?: PreferredChannel | "",
   preferredChannelOther?: string,
   priority: PersonPriority = "medium",
-  tags: string[] = []
+  tags: string[] = [],
+  nextFollowUpAt?: string | null
 ) {
   const client = assertClient();
   const normalizedTags = normalizeTags(tags);
@@ -463,8 +466,9 @@ export async function createPerson(
       preferred_channel_other: normalizePreferredChannelOther(preferredChannelOther),
       priority,
       tags: normalizedTags,
+      next_follow_up_at: normalizeEventDate(nextFollowUpAt),
     })
-    .select("id,name,company,is_vip,linkedin_url,email,phone_number,preferred_channel,preferred_channel_other,priority,tags,created_at")
+    .select("id,name,company,is_vip,linkedin_url,email,phone_number,preferred_channel,preferred_channel_other,priority,tags,next_follow_up_at,created_at")
     .single();
 
   assertNoError(error);
@@ -501,6 +505,7 @@ export async function updatePersonDetails(input: {
   preferredChannelOther?: string;
   priority?: PersonPriority;
   tags?: string[];
+  nextFollowUpAt?: string | null;
 }) {
   const client = assertClient();
   const normalizedPriority = input.priority || "medium";
@@ -519,6 +524,25 @@ export async function updatePersonDetails(input: {
       preferred_channel_other: normalizePreferredChannelOther(input.preferredChannelOther),
       priority: normalizedPriority,
       tags: normalizedTags,
+      ...(input.nextFollowUpAt !== undefined ? { next_follow_up_at: normalizeEventDate(input.nextFollowUpAt) } : {}),
+    })
+    .eq("user_id", input.userId)
+    .eq("id", input.personId);
+
+  assertNoError(error);
+}
+
+export async function updatePersonNextFollowUpAt(input: {
+  userId: string;
+  personId: string;
+  nextFollowUpAt?: string | null;
+}) {
+  const client = assertClient();
+
+  const { error } = await client
+    .from("persons")
+    .update({
+      next_follow_up_at: normalizeEventDate(input.nextFollowUpAt),
     })
     .eq("user_id", input.userId)
     .eq("id", input.personId);
@@ -573,6 +597,24 @@ export async function updateEventDetails(input: {
   assertNoError(error);
 }
 
+export async function updateEventEndedAt(input: {
+  userId: string;
+  eventId: string;
+  endedAt?: string | null;
+}) {
+  const client = assertClient();
+
+  const { error } = await client
+    .from("events")
+    .update({
+      ended_at: input.endedAt || new Date().toISOString(),
+    })
+    .eq("user_id", input.userId)
+    .eq("id", input.eventId);
+
+  assertNoError(error);
+}
+
 export async function deleteEvent(userId: string, eventId: string) {
   const client = assertClient();
 
@@ -618,7 +660,7 @@ export async function listRecentPeople(userId: string, limit = 8) {
 
   const { data, error } = await client
     .from("persons")
-    .select("id,name,company,is_vip,linkedin_url,email,phone_number,preferred_channel,preferred_channel_other,priority,tags,created_at")
+    .select("id,name,company,is_vip,linkedin_url,email,phone_number,preferred_channel,preferred_channel_other,priority,tags,next_follow_up_at,created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -632,7 +674,7 @@ export async function listRecentEvents(userId: string, limit = 5) {
 
   const { data, error } = await client
     .from("events")
-    .select("id,name,category,event_date,created_at")
+    .select("id,name,category,event_date,ended_at,created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -694,7 +736,7 @@ export async function getFirstPerson(userId: string) {
 
   const { data, error } = await client
     .from("persons")
-    .select("id,name,company,is_vip,linkedin_url,email,phone_number,preferred_channel,preferred_channel_other,priority,tags,created_at")
+    .select("id,name,company,is_vip,linkedin_url,email,phone_number,preferred_channel,preferred_channel_other,priority,tags,next_follow_up_at,created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -729,7 +771,7 @@ export async function listPeopleInsights(userId: string) {
     const whatMatters = extractPrimaryNote(rawNote) || "No interactions yet.";
     const nextStep = extractNextStep(rawNote);
     const relationshipStatus = extractRelationshipStatus(rawNote);
-    const nextFollowUpAt = extractFollowUpDate(rawNote);
+    const nextFollowUpAt = person.next_follow_up_at || extractFollowUpDate(rawNote);
 
     return {
       id: person.id,

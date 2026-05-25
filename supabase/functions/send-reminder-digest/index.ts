@@ -11,6 +11,7 @@ type PersonRow = {
   user_id: string;
   name: string | null;
   company: string | null;
+  next_follow_up_at: string | null;
 };
 
 type InteractionRow = {
@@ -72,7 +73,7 @@ function latestDueItems(people: PersonRow[], interactions: InteractionRow[], tod
       return [];
     }
 
-    const followUpDate = extractFollowUpDate(latest.raw_note);
+    const followUpDate = person.next_follow_up_at || extractFollowUpDate(latest.raw_note);
     if (!followUpDate || followUpDate > today) {
       return [];
     }
@@ -201,7 +202,7 @@ Deno.serve(async (req) => {
 
     const [{ data: userResult }, { data: people }, { data: interactions, error: interactionsError }] = await Promise.all([
       supabase.auth.admin.getUserById(preference.user_id),
-      supabase.from("persons").select("id,user_id,name,company").eq("user_id", preference.user_id),
+      supabase.from("persons").select("id,user_id,name,company,next_follow_up_at").eq("user_id", preference.user_id),
       supabase
         .from("interactions")
         .select("person_id,raw_note,created_at,events(name)")

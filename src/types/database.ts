@@ -80,6 +80,7 @@ export type Database = {
 				Row: {
 						category: string | null;
 					created_at: string;
+					ended_at: string | null;
 					event_date: string | null;
 					id: string;
 					name: string;
@@ -88,6 +89,7 @@ export type Database = {
 				Insert: {
 						category?: string | null;
 					created_at?: string;
+					ended_at?: string | null;
 					event_date?: string | null;
 					id?: string;
 					name: string;
@@ -96,6 +98,7 @@ export type Database = {
 				Update: {
 						category?: string | null;
 					created_at?: string;
+					ended_at?: string | null;
 					event_date?: string | null;
 					id?: string;
 					name?: string;
@@ -120,6 +123,7 @@ export type Database = {
 					is_vip: boolean;
 						linkedin_url: string | null;
 					name: string | null;
+					next_follow_up_at: string | null;
 					preferred_channel: string | null;
 					preferred_channel_other: string | null;
 					priority: string;
@@ -136,6 +140,7 @@ export type Database = {
 					is_vip?: boolean;
 						linkedin_url?: string | null;
 					name?: string | null;
+					next_follow_up_at?: string | null;
 					preferred_channel?: string | null;
 					preferred_channel_other?: string | null;
 					priority?: string;
@@ -152,6 +157,7 @@ export type Database = {
 					is_vip?: boolean;
 						linkedin_url?: string | null;
 					name?: string | null;
+					next_follow_up_at?: string | null;
 					preferred_channel?: string | null;
 					preferred_channel_other?: string | null;
 					priority?: string;

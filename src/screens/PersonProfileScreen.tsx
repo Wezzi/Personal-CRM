@@ -30,6 +30,7 @@ import {
   parseDateOnlyString,
   updateInteraction,
   updatePersonDetails,
+  updatePersonNextFollowUpAt,
   isContactStale,
 } from "../lib/crm";
 import { layout, useTheme, useThemedStyles } from "../theme/tokens";
@@ -704,6 +705,11 @@ export function PersonProfileScreen({
         eventId,
         rawNote: buildUpdateRecord(),
       });
+      await updatePersonNextFollowUpAt({
+        userId,
+        personId: updatePerson.id,
+        nextFollowUpAt: updateDraft.dueDate.trim() || null,
+      });
 
       void captureAnalyticsEvent("interaction_logged", {
         surface: "people_log_update",
@@ -754,6 +760,7 @@ export function PersonProfileScreen({
           phoneNumber: draft.phoneNumber,
           preferredChannel: draft.preferredChannel,
           preferredChannelOther: draft.preferredChannelOther,
+          nextFollowUpAt: draft.nextFollowUpAt,
         });
 
         let eventId: string | null = null;
@@ -817,7 +824,8 @@ export function PersonProfileScreen({
             draft.preferredChannel,
             draft.preferredChannelOther,
             draft.priority,
-            draft.tags
+            draft.tags,
+            draft.nextFollowUpAt
           )
         ).id;
       } else {
@@ -833,6 +841,7 @@ export function PersonProfileScreen({
           preferredChannelOther: draft.preferredChannelOther,
           priority: draft.priority,
           tags: draft.tags,
+          nextFollowUpAt: draft.nextFollowUpAt,
         });
       }
 
@@ -989,6 +998,30 @@ export function PersonProfileScreen({
         <Typography variant="caption" style={styles.preferredChannelText}>
           Prefers {formatPreferredChannelLabel(person.preferredChannel, person.preferredChannelOther)}
         </Typography>
+      </View>
+    );
+  }
+
+  function renderContactDetailsSection(person: (typeof people)[number], compact = false) {
+    const missingDetails = !person.preferredChannel || (!person.linkedinUrl && !person.email && !person.phoneNumber);
+
+    return (
+      <View style={[styles.contactDetailsBox, compact ? styles.contactDetailsBoxCompact : null]}>
+        <View style={styles.contactDetailsHeader}>
+          <View style={styles.contactDetailsCopy}>
+            <Typography variant="caption">Contact details</Typography>
+            <Typography variant="body" style={styles.confirmMeta}>
+              {missingDetails ? "Incomplete. Add how to reach them when you have a second." : "Ready for follow-up."}
+            </Typography>
+          </View>
+          <Button label="Edit" onPress={() => openEditPerson(person)} variant="ghost" fullWidth={false} size="compact" />
+        </View>
+        <View style={styles.metaRow}>
+          <Typography variant="caption">{formatPreferredChannelLabel(person.preferredChannel, person.preferredChannelOther)}</Typography>
+          {person.linkedinUrl ? <Typography variant="caption">LinkedIn saved</Typography> : null}
+          {person.email ? <Typography variant="caption">Email saved</Typography> : null}
+          {person.phoneNumber ? <Typography variant="caption">Phone saved</Typography> : null}
+        </View>
       </View>
     );
   }
@@ -1211,6 +1244,11 @@ export function PersonProfileScreen({
         userId,
         personId: person.id,
         rawNote: `Reminder set.\nNext step: Follow up\nFollow up date: ${date}`,
+      });
+      await updatePersonNextFollowUpAt({
+        userId,
+        personId: person.id,
+        nextFollowUpAt: date,
       });
       setFollowUpPerson(null);
       setFollowUpMessage("");
@@ -1764,6 +1802,7 @@ export function PersonProfileScreen({
                 <Typography variant="caption">Status: {selectedPerson.relationshipStatus}</Typography>
               ) : null}
               {renderPreferredChannelPill(selectedPerson)}
+              {renderContactDetailsSection(selectedPerson)}
               {selectedPerson.tags.length ? (
                 <View style={styles.tagPillRow}>
                   {selectedPerson.tags.map((tag) => (
@@ -1866,6 +1905,7 @@ export function PersonProfileScreen({
                           <Typography variant="caption">{getMomentLabel(person.interactionCount)}</Typography>
                         </View>
                         {renderPreferredChannelPill(person)}
+                        {renderContactDetailsSection(person, true)}
                         {person.relationshipStatus ? <Typography variant="caption">Status: {person.relationshipStatus}</Typography> : null}
                         {person.tags.length ? <Typography variant="caption">Tags: {person.tags.join(", ")}</Typography> : null}
                         {renderContactActionButtons(person, true)}
@@ -2834,6 +2874,27 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   preferredChannelText: {
     color: colors.primaryAction,
+  },
+  contactDetailsBox: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    padding: 14,
+    gap: 10,
+  },
+  contactDetailsBoxCompact: {
+    padding: 12,
+  },
+  contactDetailsHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  contactDetailsCopy: {
+    flex: 1,
+    gap: 4,
   },
   featureNote: {
     color: colors.textSecondary,

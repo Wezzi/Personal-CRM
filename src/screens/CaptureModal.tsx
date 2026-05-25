@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  AppState,
   Linking,
   Modal,
   Platform,
@@ -408,6 +409,7 @@ export function CaptureModal({
   const [isGeneratingSavedDraftMessage, setGeneratingSavedDraftMessage] = useState(false);
   const [extractionNotice, setExtractionNotice] = useState<ExtractionNotice | null>(null);
   const [captureReadyMessage, setCaptureReadyMessage] = useState("");
+  const [isVoicePaused, setVoicePaused] = useState(false);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
@@ -418,6 +420,21 @@ export function CaptureModal({
   const [isCardScanProcessing, setIsCardScanProcessing] = useState(false);
   const [isScanChoiceVisible, setIsScanChoiceVisible] = useState(false);
   const [isQrScannerVisible, setIsQrScannerVisible] = useState(false);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" && recorderState.isRecording && !isVoicePaused) {
+        try {
+          recorder.pause();
+          setVoicePaused(true);
+        } catch {
+          // Native interruption handling can vary; the visible pause state still keeps the user oriented.
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [isVoicePaused, recorder, recorderState.isRecording]);
 
   useEffect(() => {
     if (!visible) {
@@ -591,7 +608,6 @@ export function CaptureModal({
 
     if (method === "scan") {
       setIsScanChoiceVisible(true);
-      setCaptureStage("contact");
     }
   }
 
@@ -612,10 +628,30 @@ export function CaptureModal({
 
       await recorder.prepareToRecordAsync();
       recorder.record();
+      setVoicePaused(false);
     } catch (error) {
       setVoiceError(
         error instanceof Error ? error.message : "Could not start recording."
       );
+    }
+  }
+
+  function handleToggleVoicePause() {
+    try {
+      if (!recorderState.isRecording) {
+        return;
+      }
+
+      if (isVoicePaused) {
+        recorder.record();
+        setVoicePaused(false);
+        return;
+      }
+
+      recorder.pause();
+      setVoicePaused(true);
+    } catch (error) {
+      setVoiceError(error instanceof Error ? error.message : "Could not pause or resume recording.");
     }
   }
 
@@ -664,6 +700,7 @@ export function CaptureModal({
       );
     } finally {
       setIsTranscribing(false);
+      setVoicePaused(false);
     }
   }
 
@@ -732,7 +769,7 @@ export function CaptureModal({
       });
 
       setActiveMethod("manual");
-      setCaptureStage("contact");
+      setCaptureStage("review");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Business card scan failed.";
       setScanError(message);
@@ -791,7 +828,7 @@ export function CaptureModal({
       fields: extractedFields.length ? extractedFields : ["linkedinUrl"],
     });
     setActiveMethod("manual");
-    setCaptureStage("contact");
+    setCaptureStage("review");
     setIsQrScannerVisible(false);
   }
 
@@ -935,6 +972,7 @@ export function CaptureModal({
     setSavedDraftMessage("");
     setGeneratingSavedDraftMessage(false);
     setExtractionNotice(null);
+    setVoicePaused(false);
     setCaptureStage("capture");
   }
 
@@ -1223,15 +1261,25 @@ export function CaptureModal({
                   disabled={isTranscribing}
                 >
                   <Typography variant="h1" style={styles.speakIcon}>
-                    {isTranscribing ? "..." : recorderState.isRecording ? "Stop" : "🎤"}
+                    {isTranscribing ? "..." : recorderState.isRecording ? "Stop" : "Mic"}
                   </Typography>
                   <Typography variant="h2" style={styles.speakLabel}>
-                    {isTranscribing ? "Transcribing..." : recorderState.isRecording ? "Tap to finish" : "Hold to speak"}
+                    {isTranscribing ? "Transcribing..." : recorderState.isRecording ? "Tap to finish" : "Tap to speak"}
                   </Typography>
                   <Typography variant="body" style={styles.speakHelper}>
                     “Met Sarah from Acme, partnership lead, follow up next week.”
                   </Typography>
                 </Pressable>
+
+                {recorderState.isRecording ? (
+                  <Button
+                    label={isVoicePaused ? "Resume recording" : "Pause recording"}
+                    onPress={handleToggleVoicePause}
+                    variant="ghost"
+                    fullWidth={false}
+                    size="compact"
+                  />
+                ) : null}
 
                 {voiceError ? (
                   <Typography variant="caption" style={styles.errorText}>
@@ -1348,8 +1396,8 @@ export function CaptureModal({
                 ) : null}
               </View>
 
+              {(!showQuickCapture || captureStage === "contact") ? (
               <View style={[styles.chipSection, extractedFieldSet.has("preferredChannel") ? styles.extractedSection : null]}>
-                {(!showQuickCapture || captureStage === "contact") ? (
                 <>
                 <Typography variant="caption">Best follow-up channel</Typography>
                 <View style={styles.chipRow}>
@@ -1376,8 +1424,8 @@ export function CaptureModal({
                   />
                 ) : null}
                 </>
-                ) : null}
               </View>
+              ) : null}
             </Card>
             ) : null}
 
@@ -1404,7 +1452,7 @@ export function CaptureModal({
               </View>
               ) : null}
 
-              {(!showQuickCapture || captureStage === "contact") ? (
+              {!showQuickCapture || captureStage === "contact" ? (
               <>
               <View style={styles.sectionIntro}>
                 <Typography variant="caption">Contact details</Typography>
@@ -1596,7 +1644,10 @@ export function CaptureModal({
               ) : null}
               {showQuickCapture && captureStage === "review" ? (
                 <>
-                  <Button label="Confirm" onPress={() => setCaptureStage("contact")} disabled={!canSave} />
+                  <Button label={saveLabel} onPress={() => void handleSave(false)} loading={isSaving} disabled={!canSave} />
+                  {showSaveAndAddAnother ? (
+                    <Button label="Save & Add Another" onPress={() => void handleSave(true)} loading={isSaving} disabled={!canSave} variant="ghost" />
+                  ) : null}
                   <Button label="Start over" onPress={resetForAnotherCapture} variant="ghost" />
                 </>
               ) : null}

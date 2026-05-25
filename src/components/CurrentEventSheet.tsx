@@ -4,7 +4,7 @@ import { Modal, SafeAreaView, ScrollView, StyleSheet, TextInput, View, useWindow
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { EVENT_CATEGORY_OPTIONS, EventCategory, formatCategoryLabel } from "../lib/crm";
-import { LumaEventSuggestion, suggestLumaEvent } from "../lib/lumaEvents";
+import { LumaEventSuggestion, LumaSuggestedEvent, suggestLumaEvent } from "../lib/lumaEvents";
 import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 import { Button } from "./ui/Button";
 import { Card } from "./ui/Card";
@@ -202,13 +202,9 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
     }
   }
 
-  function handleUseLumaSuggestion() {
-    if (!lumaSuggestion) {
-      return;
-    }
-
-    setName(lumaSuggestion.event.name);
-    setEventDate(lumaSuggestion.event.eventDate);
+  function handleUseLumaSuggestion(event: LumaSuggestedEvent) {
+    setName(event.name);
+    setEventDate(event.eventDate);
     setCategory("networking");
   }
 
@@ -271,20 +267,27 @@ export function CurrentEventSheet({ visible, value, onClose, onSave, onClear, dr
                 <Typography variant="caption">
                   {lumaSuggestion.isActiveNow ? "Looks like you're at" : "Suggested event"}
                 </Typography>
-                <Typography variant="h2" style={styles.suggestionTitle}>{lumaSuggestion.event.name}</Typography>
                 <Typography variant="body" style={styles.suggestionMeta}>
-                  {[
-                    formatSuggestionTime(lumaSuggestion.event.startsAt),
-                    lumaSuggestion.event.location,
-                  ].filter(Boolean).join(" · ")}
+                  We found {lumaSuggestion.count} event{lumaSuggestion.count === 1 ? "" : "s"}. Pick the one you are actually at.
                 </Typography>
-                <Typography variant="body" style={styles.suggestionMeta}>
-                  We found {lumaSuggestion.count} event{lumaSuggestion.count === 1 ? "" : "s"} from that calendar.
-                </Typography>
-                <View style={styles.datePillRow}>
-                  <Button label="Use this event" onPress={handleUseLumaSuggestion} fullWidth={false} size="compact" />
-                  <Button label="Not now" onPress={() => setLumaSuggestion(null)} variant="ghost" fullWidth={false} size="compact" />
-                </View>
+                <ScrollView style={styles.suggestionList} nestedScrollEnabled showsVerticalScrollIndicator>
+                  {(lumaSuggestion.suggestions?.length ? lumaSuggestion.suggestions : [lumaSuggestion.event]).map((event) => (
+                    <View key={`${event.name}-${event.startsAt}`} style={styles.suggestionItem}>
+                      <View style={styles.suggestionCopy}>
+                        <Typography variant="h2" style={styles.suggestionTitle} numberOfLines={2}>{event.name}</Typography>
+                        <Typography variant="caption" style={styles.suggestionMeta}>
+                          {[
+                            event.isActiveNow ? "Happening now" : event.startsSoon ? "Starting soon" : null,
+                            formatSuggestionTime(event.startsAt),
+                            event.location,
+                          ].filter(Boolean).join(" · ")}
+                        </Typography>
+                      </View>
+                      <Button label="Use" onPress={() => handleUseLumaSuggestion(event)} fullWidth={false} size="compact" />
+                    </View>
+                  ))}
+                </ScrollView>
+                <Button label="Not now" onPress={() => setLumaSuggestion(null)} variant="ghost" fullWidth={false} size="compact" />
               </View>
             ) : null}
 
@@ -438,6 +441,22 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     borderColor: colors.border,
     backgroundColor: colors.successSoft,
     padding: 14,
+  },
+  suggestionList: {
+    maxHeight: 280,
+    marginTop: 12,
+  },
+  suggestionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 12,
+  },
+  suggestionCopy: {
+    flex: 1,
   },
   suggestionTitle: {
     marginTop: 8,

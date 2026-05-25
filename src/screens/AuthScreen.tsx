@@ -1,6 +1,6 @@
 
 import { useMemo, useState } from "react";
-import { SafeAreaView, StyleSheet, TextInput, View } from "react-native";
+import { SafeAreaView, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
 
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -28,6 +28,8 @@ export function AuthScreen({
 }: AuthScreenProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { width } = useWindowDimensions();
+  const isCompactLayout = width < 720;
   const [email, setEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
   const [sentEmail, setSentEmail] = useState("");
@@ -91,13 +93,20 @@ export function AuthScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.headerCard}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.container, isCompactLayout ? styles.containerCompact : null]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.headerCard, isCompactLayout ? styles.headerCardCompact : null]}>
           <View style={styles.headerTopRow}>
             <Typography variant="caption">Relationship follow-up</Typography>
+            {!isCompactLayout ? (
             <View style={styles.livePill}>
               <Typography variant="caption" style={styles.livePillText}>Mobile-first</Typography>
             </View>
+            ) : null}
           </View>
           <Typography variant="h1">Blackbook Pulse</Typography>
           <Typography variant="body" style={styles.subtitle}>
@@ -212,6 +221,7 @@ export function AuthScreen({
             </Typography>
           </View>
 
+          {!isCompactLayout ? (
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
               <Typography variant="caption">Email code</Typography>
@@ -226,10 +236,11 @@ export function AuthScreen({
               <Typography variant="body" style={styles.metaText}>No guest data to lose later</Typography>
             </View>
           </View>
+          ) : null}
 
           {onCancel ? <Button label="Cancel" onPress={onCancel} variant="ghost" disabled={isBusy} /> : null}
         </Card>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -239,13 +250,26 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     flex: 1,
     backgroundColor: colors.background,
   },
-  container: {
+  scroll: {
     flex: 1,
+    backgroundColor: colors.background,
+  },
+  container: {
+    flexGrow: 1,
     paddingHorizontal: layout.screenPaddingHorizontal,
     paddingVertical: layout.stackGap,
     gap: 18,
     backgroundColor: colors.background,
     justifyContent: "center",
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: 720,
+  },
+  containerCompact: {
+    justifyContent: "flex-start",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 28,
   },
   headerCard: {
     borderRadius: 28,
@@ -254,6 +278,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     borderWidth: 1,
     borderColor: colors.border,
     gap: 12,
+  },
+  headerCardCompact: {
+    borderRadius: 20,
+    padding: 18,
   },
   headerTopRow: {
     flexDirection: "row",

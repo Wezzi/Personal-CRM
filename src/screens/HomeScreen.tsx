@@ -208,6 +208,7 @@ export function HomeScreen({
           preferredChannelOther: draft.preferredChannelOther,
           priority: draft.priority,
           tags: draft.tags,
+          nextFollowUpAt: draft.nextFollowUpAt,
         });
 
         setEditingPerson(null);
@@ -228,7 +229,8 @@ export function HomeScreen({
         draft.preferredChannel,
         draft.preferredChannelOther,
         draft.priority,
-        draft.tags
+        draft.tags,
+        draft.nextFollowUpAt
       );
 
       let eventId: string | null = null;

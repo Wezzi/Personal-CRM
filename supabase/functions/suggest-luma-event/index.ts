@@ -242,17 +242,23 @@ Deno.serve(async (req) => {
       return json({ error: "We found events, but none look current or upcoming." }, 404);
     }
 
-    const best = ranked[0];
-    const start = new Date(best.event.startsAt);
+    const suggestions = ranked.slice(0, 8).map((entry) => {
+      const start = new Date(entry.event.startsAt);
+      return {
+        ...entry.event,
+        eventDate: toDateInputValue(start),
+        isActiveNow: entry.active,
+        startsSoon: entry.startsSoon,
+      };
+    });
+    const best = suggestions[0];
 
     return json({
-      event: {
-        ...best.event,
-        eventDate: toDateInputValue(start),
-      },
+      event: best,
+      suggestions,
       count: events.length,
       source: resolved.discovered ? "calendar-link-discovered" : "calendar-feed",
-      isActiveNow: best.active,
+      isActiveNow: best.isActiveNow,
       startsSoon: best.startsSoon,
     });
   } catch (error) {
