@@ -291,6 +291,17 @@ export async function getFollowUpSlotSuggestions(): Promise<CalendarSuggestedSlo
   }
 }
 
+export async function getDefaultCalendarDestination(): Promise<CalendarDestination> {
+  if (Platform.OS !== "web") {
+    return "device";
+  }
+
+  const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+  const provider = data.session?.user?.app_metadata?.provider;
+
+  return provider === "google" ? "google" : "ics";
+}
+
 function buildGoogleCalendarUrl(input: CalendarFollowUpInput): string {
   const { start, end } = getEventWindow(input);
   const params = new URLSearchParams({

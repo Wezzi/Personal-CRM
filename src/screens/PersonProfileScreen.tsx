@@ -2005,7 +2005,7 @@ export function PersonProfileScreen({
           initialDraft={editorDraft}
           lockedEvent={editorMode === "edit" ? null : currentEvent}
           title={editorMode === "edit" ? "Edit Contact" : editorMode === "createPerson" ? "Add Person" : "Add Interaction"}
-          saveLabel={editorMode === "edit" ? "Save Changes" : editorMode === "createPerson" ? "Save & Close" : "Save Interaction"}
+          saveLabel={editorMode === "edit" ? "Save Changes" : editorMode === "createPerson" ? "Save & Next" : "Save Interaction"}
           showQuickCapture={editorMode === "createPerson"}
           showSaveAndAddAnother={editorMode !== "edit"}
           draftStorageKey={PEOPLE_CAPTURE_DRAFT_STORAGE_KEY}

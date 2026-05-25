@@ -20,6 +20,7 @@ type ExtractedDraft = {
   event?: string;
   whatMatters?: string;
   nextStep?: string;
+  tags?: string[];
 };
 
 function cleanOptional(value: unknown) {
@@ -29,6 +30,31 @@ function cleanOptional(value: unknown) {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function cleanTags(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const allowed = new Set([
+    "Business Opportunity",
+    "Potential Client",
+    "Meeting Booked",
+    "Intro",
+    "New Hire",
+    "Partner",
+    "Sponsor",
+    "Interesting",
+    "Other",
+  ]);
+
+  const tags = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => allowed.has(item));
+
+  return tags.length ? Array.from(new Set(tags)).slice(0, 2) : undefined;
 }
 
 async function extractDraftFromTranscript(openaiApiKey: string, transcript: string): Promise<ExtractedDraft> {
@@ -52,6 +78,7 @@ async function extractDraftFromTranscript(openaiApiKey: string, transcript: stri
                 "Do not guess LinkedIn URLs, phone numbers, or tags. " +
                 "Keep 'whatMatters' concise and useful, like a one- or two-sentence memory aid. " +
                 "Keep 'nextStep' to the specific promised action or follow-up, if any. " +
+                "For 'tags', choose at most two outcome goals only when clearly implied. Use only: Business Opportunity, Potential Client, Meeting Booked, Intro, New Hire, Partner, Sponsor, Interesting, Other. " +
                 "If a field is missing, return null.",
             },
           ],
@@ -94,8 +121,16 @@ async function extractDraftFromTranscript(openaiApiKey: string, transcript: stri
                 type: ["string", "null"],
                 description: "The specific promised next step or follow-up, if any.",
               },
+              tags: {
+                type: ["array", "null"],
+                items: {
+                  type: "string",
+                  enum: ["Business Opportunity", "Potential Client", "Meeting Booked", "Intro", "New Hire", "Partner", "Sponsor", "Interesting", "Other"],
+                },
+                description: "Outcome goal labels clearly implied by the transcript.",
+              },
             },
-            required: ["name", "company", "event", "whatMatters", "nextStep"],
+            required: ["name", "company", "event", "whatMatters", "nextStep", "tags"],
             additionalProperties: false,
           },
         },
@@ -127,6 +162,7 @@ async function extractDraftFromTranscript(openaiApiKey: string, transcript: stri
     event: cleanOptional(parsed.event),
     whatMatters: cleanOptional(parsed.whatMatters),
     nextStep: cleanOptional(parsed.nextStep),
+    tags: cleanTags(parsed.tags),
   };
 }
 

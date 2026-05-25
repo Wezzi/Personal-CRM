@@ -15,6 +15,7 @@ export type VoiceTranscriptionResult = {
     company?: string;
     event?: string;
     nextStep?: string;
+    tags?: string[];
   };
 };
 

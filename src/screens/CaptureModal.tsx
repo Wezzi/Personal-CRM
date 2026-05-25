@@ -27,7 +27,7 @@ import * as ImagePicker from "expo-image-picker";
 
 import { QRScannerModal } from "../components/QRScannerModal";
 import { scanContactCardImage } from "../lib/cardScan";
-import { openFollowUpInCalendar } from "../lib/calendar";
+import { getDefaultCalendarDestination, openFollowUpInCalendar } from "../lib/calendar";
 import { generateFollowUpDraft } from "../lib/followUpDraft";
 import { parseScannedInput } from "../lib/scan";
 import { transcribeContactAudio } from "../lib/voice";
@@ -169,6 +169,8 @@ type SavedCaptureDraft = {
   activeMethod: QuickCaptureMethod;
   pasteInput: string;
   isFollowUpManuallySet: boolean;
+  savedDraftForNextAction?: ParsedPersonDraft | null;
+  savedDraftMessage?: string;
 };
 
 function cleanValue(value: string) {
@@ -413,6 +415,7 @@ export function CaptureModal({
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
+  const isVoiceCaptureActive = recorderState.isRecording || isVoicePaused;
 
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -498,7 +501,8 @@ export function CaptureModal({
       setIsCardScanProcessing(false);
       setIsScanChoiceVisible(false);
       setIsQrScannerVisible(false);
-      setSavedDraftForNextAction(null);
+      setSavedDraftForNextAction(savedDraft?.savedDraftForNextAction || null);
+      setSavedDraftMessage(savedDraft?.savedDraftMessage || "");
       setExtractionNotice(null);
       setCaptureReadyMessage("");
       setCaptureStage(showQuickCapture ? "capture" : "review");
@@ -523,13 +527,15 @@ export function CaptureModal({
         activeMethod,
         pasteInput,
         isFollowUpManuallySet,
+        savedDraftForNextAction,
+        savedDraftMessage,
       };
 
       await AsyncStorage.setItem(draftStorageKey as string, JSON.stringify(payload));
     }
 
     void persistDraft();
-  }, [activeMethod, autosaveWithInitialDraft, draft, draftStorageKey, hasHydratedSavedDraft, initialDraft, isFollowUpManuallySet, pasteInput, visible]);
+  }, [activeMethod, autosaveWithInitialDraft, draft, draftStorageKey, hasHydratedSavedDraft, initialDraft, isFollowUpManuallySet, pasteInput, savedDraftForNextAction, savedDraftMessage, visible]);
 
   useEffect(() => {
     if (!visible || isFollowUpManuallySet) {
@@ -638,7 +644,7 @@ export function CaptureModal({
 
   function handleToggleVoicePause() {
     try {
-      if (!recorderState.isRecording) {
+      if (!isVoiceCaptureActive) {
         return;
       }
 
@@ -653,6 +659,10 @@ export function CaptureModal({
     } catch (error) {
       setVoiceError(error instanceof Error ? error.message : "Could not pause or resume recording.");
     }
+  }
+
+  async function handleSubmitPausedVoiceCapture() {
+    await handleStopVoiceCapture();
   }
 
   async function handleStopVoiceCapture() {
@@ -988,12 +998,12 @@ export function CaptureModal({
       return;
     }
 
-    if (draftStorageKey) {
-      void AsyncStorage.removeItem(draftStorageKey);
-    }
-
     const cleanDraft = buildCleanDraft();
     const shouldShowNextActions = !addAnother && showPostSaveActions && showSaveAndAddAnother;
+
+    if (draftStorageKey && !shouldShowNextActions) {
+      void AsyncStorage.removeItem(draftStorageKey);
+    }
 
     await onSave(cleanDraft, { addAnother, keepOpen: shouldShowNextActions });
 
@@ -1140,7 +1150,7 @@ export function CaptureModal({
           nextStep: savedDraftForNextAction.nextStep,
           linkedinUrl: savedDraftForNextAction.linkedinUrl,
         },
-        Platform.OS === "web" ? "ics" : "device"
+        await getDefaultCalendarDestination()
       );
       returnToCaptureReady(savedDraftForNextAction.name);
     } catch (error) {
@@ -1172,18 +1182,25 @@ export function CaptureModal({
           {isGeneratingSavedDraftMessage ? (
             <Typography variant="caption" style={styles.tagSummary}>Improving draft for {savedDraftForNextAction.preferredChannel || "this channel"}...</Typography>
           ) : null}
-          <Typography variant="body" style={styles.previewText}>
-            {savedDraftMessage || buildPostCaptureMessage(savedDraftForNextAction)}
-          </Typography>
+          <TextInput
+            placeholder="Edit the message before sending..."
+            placeholderTextColor={colors.textTertiary}
+            style={[styles.fieldInput, styles.draftMessageInput]}
+            value={savedDraftMessage || buildPostCaptureMessage(savedDraftForNextAction)}
+            onChangeText={setSavedDraftMessage}
+            multiline
+          />
         </Card>
 
         <View style={styles.postSaveActionGrid}>
-          <Button label={getPostSavePrimaryAction(savedDraftForNextAction)} onPress={() => void handlePostSavePrimaryAction()} />
-          {getPostSavePrimaryAction(savedDraftForNextAction) !== "Copy message" ? (
-            <Button label="Copy message" onPress={() => void handleCopySavedDraftMessage()} variant="ghost" />
-          ) : null}
+          <Button label="Review later" onPress={handleSavedDraftAddAnother} />
           <Button
-            label={savedDraftForNextAction.nextFollowUpAt ? `Add reminder: ${formatFollowUpDate(savedDraftForNextAction.nextFollowUpAt)}` : "Add reminder later"}
+            label={getPostSavePrimaryAction(savedDraftForNextAction) === "Copy message" ? "Send now: copy" : `Send now: ${getPostSavePrimaryAction(savedDraftForNextAction)}`}
+            onPress={() => void handlePostSavePrimaryAction()}
+            variant="ghost"
+          />
+          <Button
+            label={savedDraftForNextAction.nextFollowUpAt ? `Add to calendar: ${formatFollowUpDate(savedDraftForNextAction.nextFollowUpAt)}` : "Add calendar reminder later"}
             onPress={() => void handlePostSaveCalendarAction()}
             variant="ghost"
           />
@@ -1248,32 +1265,46 @@ export function CaptureModal({
                   </Typography>
                 </View>
 
-                <Pressable
-                  style={[styles.speakButton, recorderState.isRecording ? styles.speakButtonActive : null]}
-                  onPress={
-                    recorderState.isRecording
-                      ? () => void handleStopVoiceCapture()
-                      : () => {
-                          handleMethodPress("voice");
-                          void handleStartVoiceCapture();
-                        }
-                  }
-                  disabled={isTranscribing}
-                >
-                  <Typography variant="h1" style={styles.speakIcon}>
-                    {isTranscribing ? "..." : recorderState.isRecording ? "Stop" : "Mic"}
-                  </Typography>
-                  <Typography variant="h2" style={styles.speakLabel}>
-                    {isTranscribing ? "Transcribing..." : recorderState.isRecording ? "Tap to finish" : "Tap to speak"}
-                  </Typography>
-                  <Typography variant="body" style={styles.speakHelper}>
-                    “Met Sarah from Acme, partnership lead, follow up next week.”
-                  </Typography>
-                </Pressable>
+                {isVoicePaused ? (
+                  <View style={styles.pausedVoiceCard}>
+                    <Typography variant="caption">Recording paused</Typography>
+                    <Typography variant="h2">Resume or submit?</Typography>
+                    <Typography variant="body" style={styles.helperText}>
+                      We paused the voice note and will not resume until you choose.
+                    </Typography>
+                    <View style={styles.secondaryCaptureRow}>
+                      <Button label="Resume" onPress={handleToggleVoicePause} fullWidth={false} size="compact" />
+                      <Button label="Submit voice note" onPress={() => void handleSubmitPausedVoiceCapture()} variant="ghost" fullWidth={false} size="compact" />
+                    </View>
+                  </View>
+                ) : (
+                  <Pressable
+                    style={[styles.speakButton, recorderState.isRecording ? styles.speakButtonActive : null]}
+                    onPress={
+                      recorderState.isRecording
+                        ? () => void handleStopVoiceCapture()
+                        : () => {
+                            handleMethodPress("voice");
+                            void handleStartVoiceCapture();
+                          }
+                    }
+                    disabled={isTranscribing}
+                  >
+                    <Typography variant="h1" style={styles.speakIcon}>
+                      {isTranscribing ? "..." : recorderState.isRecording ? "Stop" : "Mic"}
+                    </Typography>
+                    <Typography variant="h2" style={styles.speakLabel}>
+                      {isTranscribing ? "Transcribing..." : recorderState.isRecording ? "Tap to finish" : "Tap to speak"}
+                    </Typography>
+                    <Typography variant="body" style={styles.speakHelper}>
+                      “Met Sarah from Acme, partnership lead, follow up next week.”
+                    </Typography>
+                  </Pressable>
+                )}
 
-                {recorderState.isRecording ? (
+                {recorderState.isRecording && !isVoicePaused ? (
                   <Button
-                    label={isVoicePaused ? "Resume recording" : "Pause recording"}
+                    label="Pause recording"
                     onPress={handleToggleVoicePause}
                     variant="ghost"
                     fullWidth={false}
@@ -1772,6 +1803,16 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   speakButtonActive: {
     backgroundColor: colors.primaryActionHover,
   },
+  pausedVoiceCard: {
+    minHeight: 220,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: colors.primaryAction,
+    backgroundColor: colors.successSoft,
+    justifyContent: "center",
+    padding: 24,
+    gap: 12,
+  },
   speakIcon: {
     color: colors.onPrimary,
   },
@@ -1871,6 +1912,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   textAreaInput: {
     minHeight: 96,
+    textAlignVertical: "top",
+  },
+  draftMessageInput: {
+    minHeight: 150,
     textAlignVertical: "top",
   },
   fastTextAreaInput: {

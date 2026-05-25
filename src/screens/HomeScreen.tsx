@@ -336,7 +336,7 @@ export function HomeScreen({
         visible={isCaptureOpen}
         onClose={closeCapture}
         onSave={handleSaveDraft}
-        saveLabel={editingPerson ? "Save Changes" : "Save & Close"}
+        saveLabel={editingPerson ? "Save Changes" : "Save & Next"}
         isSaving={isSaving}
         lockedEvent={currentEvent}
         initialDraft={editingPerson ? {

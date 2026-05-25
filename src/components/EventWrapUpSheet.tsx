@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { Alert, Modal, SafeAreaView, ScrollView, StyleSheet, View } from "react-native";
-
-import * as Clipboard from "expo-clipboard";
+import { Modal, SafeAreaView, ScrollView, StyleSheet, View } from "react-native";
 
 
 
@@ -18,12 +16,6 @@ import { Typography } from "./ui/Typography";
 
 import { ensureSessionUserId, listPeopleInsights, PersonInsight } from "../lib/crm";
 
-import { buildPeopleCsv, exportCsvFile } from "../lib/csvExport";
-
-import { emailEventSummary } from "../lib/emailSummary";
-
-import { buildSlackCanvasSummary } from "../lib/slackCanvas";
-
 import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 
 
@@ -33,8 +25,6 @@ type EventWrapUpSheetProps = {
   visible: boolean;
 
   event: CurrentEventValue | null;
-
-  canExportCsv?: boolean;
 
   onClose: () => void;
 
@@ -94,19 +84,13 @@ function scorePersonForWrapUp(person: PersonInsight) {
 
 
 
-export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose, onExitEventMode }: EventWrapUpSheetProps) {
+export function EventWrapUpSheet({ visible, event, onClose, onExitEventMode }: EventWrapUpSheetProps) {
 
   const styles = useThemedStyles(createStyles);
 
   const [people, setPeople] = useState<PersonInsight[]>([]);
 
   const [isLoading, setLoading] = useState(false);
-
-  const [isCopyingSummary, setCopyingSummary] = useState(false);
-
-  const [isExportingCsv, setExportingCsv] = useState(false);
-
-  const [isEmailingSummary, setEmailingSummary] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -193,138 +177,6 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
 
 
   const activeEvent = event;
-
-
-
-  function buildSummaryText() {
-
-    return buildSlackCanvasSummary({
-
-      eventName: activeEvent.name,
-
-      eventDate: activeEvent.eventDate,
-
-      people,
-
-    });
-
-  }
-
-
-
-  async function handleCopySummary() {
-
-    if (isCopyingSummary) {
-
-      return;
-
-    }
-
-
-
-    try {
-
-      setCopyingSummary(true);
-
-      await Clipboard.setStringAsync(buildSummaryText());
-
-      Alert.alert("Summary copied", "Paste it into Slack, email, or notes when you are ready.");
-
-    } catch {
-
-      Alert.alert("Copy failed", "Could not copy this event summary.");
-
-    } finally {
-
-      setCopyingSummary(false);
-
-    }
-
-  }
-
-
-
-  async function handleExportCsv() {
-
-    if (isExportingCsv) {
-
-      return;
-
-    }
-
-
-
-    if (!people.length) {
-
-      Alert.alert("Nothing to export yet", "Capture at least one person for this event first.");
-
-      return;
-
-    }
-
-
-
-    try {
-
-      setExportingCsv(true);
-
-      await exportCsvFile({
-
-        csv: buildPeopleCsv(people),
-
-        fileName: `${activeEvent.name} contacts`,
-
-      });
-
-    } catch (error) {
-
-      Alert.alert("CSV export failed", error instanceof Error ? error.message : "Could not export this event.");
-
-    } finally {
-
-      setExportingCsv(false);
-
-    }
-
-  }
-
-
-
-  async function handleEmailSummary() {
-
-    if (isEmailingSummary) {
-
-      return;
-
-    }
-
-
-
-    try {
-
-      setEmailingSummary(true);
-
-      await emailEventSummary({
-
-        eventName: activeEvent.name,
-
-        eventDate: activeEvent.eventDate,
-
-      });
-
-      Alert.alert("Email sent", "Your event summary has been sent to your signed-in email.");
-
-    } catch (error) {
-
-      Alert.alert("Email summary failed", error instanceof Error ? error.message : "Could not email this summary.");
-
-    } finally {
-
-      setEmailingSummary(false);
-
-    }
-
-  }
 
 
 
@@ -487,78 +339,6 @@ export function EventWrapUpSheet({ visible, event, canExportCsv = false, onClose
                 ))}
 
               </View>
-
-            ) : null}
-
-
-
-            {!isLoading ? (
-
-              <Card style={styles.assistantCard}>
-
-                <Typography variant="caption">Close loops</Typography>
-
-                <Typography variant="body" style={styles.metaText}>
-
-                  Generate messages, add reminders, or copy the memory somewhere useful. Then you are done.
-
-                </Typography>
-
-                <View style={styles.actionRow}>
-
-                  <Button
-
-                    label="Copy summary"
-
-                    onPress={() => void handleCopySummary()}
-
-                    loading={isCopyingSummary}
-
-                    fullWidth={false}
-
-                    size="compact"
-
-                  />
-
-                  {canExportCsv ? (
-
-                    <Button
-
-                      label="Export CSV"
-
-                      onPress={() => void handleExportCsv()}
-
-                      loading={isExportingCsv}
-
-                      variant="ghost"
-
-                      fullWidth={false}
-
-                      size="compact"
-
-                    />
-
-                  ) : null}
-
-                  <Button
-
-                    label="Email summary"
-
-                    onPress={() => void handleEmailSummary()}
-
-                    loading={isEmailingSummary}
-
-                    variant="ghost"
-
-                    fullWidth={false}
-
-                    size="compact"
-
-                  />
-
-                </View>
-
-              </Card>
 
             ) : null}
 

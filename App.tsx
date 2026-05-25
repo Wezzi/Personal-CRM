@@ -641,15 +641,15 @@ useEffect(() => {
     }
   }
 
-  function exitCurrentEventMode() {
-    void recordCurrentEventEnded();
+  async function exitCurrentEventMode() {
+    await recordCurrentEventEnded();
     setCurrentEvent(null);
     setEventWrapUpOpen(false);
   }
 
   function confirmExitCurrentEventMode() {
     if (!currentEvent) {
-      exitCurrentEventMode();
+      void exitCurrentEventMode();
       return;
     }
 
@@ -661,7 +661,7 @@ useEffect(() => {
         {
           text: "Exit event mode",
           style: "destructive",
-          onPress: exitCurrentEventMode,
+          onPress: () => void exitCurrentEventMode(),
         },
       ]
     );
@@ -687,8 +687,8 @@ useEffect(() => {
     }
   }
 
-  function handleClearCurrentEvent() {
-    void recordCurrentEventEnded();
+  async function handleClearCurrentEvent() {
+    await recordCurrentEventEnded();
     setCurrentEvent(null);
     setCurrentEventOpen(false);
     void AsyncStorage.setItem(CURRENT_EVENT_SHEET_OPEN_STORAGE_KEY, "false");
@@ -912,7 +912,6 @@ useEffect(() => {
       <EventWrapUpSheet
         visible={isEventWrapUpOpen}
         event={currentEvent}
-        canExportCsv={featureAccess.features.exportCsv}
         onClose={() => setEventWrapUpOpen(false)}
         onExitEventMode={exitCurrentEventMode}
       />
