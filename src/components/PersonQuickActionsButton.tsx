@@ -19,6 +19,7 @@ import {
   markPersonContactedToday,
   parseDateOnlyString,
   PersonInsight,
+  updatePersonNextFollowUpAt,
 } from "../lib/crm";
 import { captureAnalyticsEvent } from "../lib/analytics";
 import { generateFollowUpDraft } from "../lib/followUpDraft";
@@ -418,6 +419,13 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
           followUpDate ? `Follow up date: ${followUpDate}` : null,
         ].filter(Boolean).join("\n"),
       });
+      if (followUpDate) {
+        await updatePersonNextFollowUpAt({
+          userId,
+          personId: person.id,
+          nextFollowUpAt: followUpDate,
+        });
+      }
       setStatusOpen(false);
       await clearQuickActionState();
       await refreshParent();
@@ -445,6 +453,11 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
         userId,
         personId: person.id,
         rawNote: `Reminder set.\nNext step: Follow up\nFollow up date: ${date}`,
+      });
+      await updatePersonNextFollowUpAt({
+        userId,
+        personId: person.id,
+        nextFollowUpAt: date,
       });
       setReminderOpen(false);
       await clearQuickActionState();
@@ -503,12 +516,40 @@ export function PersonQuickActionsButton({ person, onChanged, onEdit }: PersonQu
           <Card style={styles.menuCard}>
             <Typography variant="caption">Quick actions</Typography>
             <Typography variant="h2">{person.name}</Typography>
-            <Button label="Mark contacted" onPress={() => void handleMarkContacted()} variant="ghost" />
-            <Button label="Draft message" onPress={openDraft} variant="ghost" disabled={!contactMethods.length} />
-            <Button label="Update status" onPress={openStatus} variant="ghost" />
-            <Button label="Set reminder" onPress={openReminder} variant="ghost" />
-            {onEdit ? <Button label="Edit contact" onPress={onEdit} variant="ghost" /> : null}
-            <Button label="Timeline" onPress={() => void openTimeline()} variant="ghost" />
+            <View style={styles.menuSection}>
+              <Typography variant="caption">Do now</Typography>
+              <Button label="Draft message" onPress={openDraft} disabled={!contactMethods.length} />
+              <Button label="Set reminder" onPress={openReminder} />
+            </View>
+            <View style={styles.menuSection}>
+              <Typography variant="caption">Optional logs</Typography>
+              <Button
+                label="Verify identity"
+                onPress={() => {
+                  closeMenu();
+                  onEdit?.();
+                }}
+                variant="ghost"
+              />
+              <Button label="Update status" onPress={openStatus} variant="ghost" />
+              <Button label="Mark contacted" onPress={() => void handleMarkContacted()} variant="ghost" />
+            </View>
+            <View style={styles.adminActionRow}>
+              {onEdit ? (
+                <Pressable
+                  onPress={() => {
+                    closeMenu();
+                    onEdit();
+                  }}
+                  hitSlop={8}
+                >
+                  <Typography variant="caption" style={styles.adminActionText}>Edit contact</Typography>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={() => void openTimeline()} hitSlop={8}>
+                <Typography variant="caption" style={styles.adminActionText}>Timeline</Typography>
+              </Pressable>
+            </View>
             <Button label="Close" onPress={closeMenu} variant="ghost" />
           </Card>
         </View>
@@ -727,6 +768,18 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     width: "100%",
     maxWidth: 420,
     gap: 10,
+  },
+  menuSection: {
+    gap: 8,
+  },
+  adminActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 14,
+    paddingTop: 4,
+  },
+  adminActionText: {
+    color: colors.textSecondary,
   },
   modalCard: {
     width: "100%",

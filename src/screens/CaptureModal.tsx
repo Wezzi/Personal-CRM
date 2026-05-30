@@ -162,6 +162,7 @@ type CaptureModalProps = {
   draftStorageKey?: string;
   autosaveWithInitialDraft?: boolean;
   showPostSaveActions?: boolean;
+  autoOpenScan?: boolean;
 };
 
 type SavedCaptureDraft = {
@@ -175,6 +176,10 @@ type SavedCaptureDraft = {
 
 function cleanValue(value: string) {
   return value.replace(/^[\s:,-]+|[\s:,-]+$/g, "").trim();
+}
+
+function normalizeTagLabel(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function titleCaseFromSlug(value: string) {
@@ -396,6 +401,7 @@ export function CaptureModal({
   draftStorageKey,
   autosaveWithInitialDraft = false,
   showPostSaveActions = true,
+  autoOpenScan = false,
 }: CaptureModalProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -499,13 +505,13 @@ export function CaptureModal({
       setCustomFollowUpDate(customParts.date);
       setScanError(null);
       setIsCardScanProcessing(false);
-      setIsScanChoiceVisible(false);
+      setIsScanChoiceVisible(Boolean(autoOpenScan));
       setIsQrScannerVisible(false);
       setSavedDraftForNextAction(savedDraft?.savedDraftForNextAction || null);
       setSavedDraftMessage(savedDraft?.savedDraftMessage || "");
       setExtractionNotice(null);
       setCaptureReadyMessage("");
-      setCaptureStage(showQuickCapture ? "capture" : "review");
+      setCaptureStage(autoOpenScan ? "contact" : showQuickCapture ? "capture" : "review");
       setHasHydratedSavedDraft(true);
     }
 
@@ -514,7 +520,7 @@ export function CaptureModal({
     return () => {
       isMounted = false;
     };
-  }, [initialDraft, initialMethod, lockedEvent, showQuickCapture, visible]);
+  }, [autoOpenScan, initialDraft, initialMethod, lockedEvent, showQuickCapture, visible]);
 
   useEffect(() => {
     if (!visible || !draftStorageKey || !hasHydratedSavedDraft || (initialDraft && !autosaveWithInitialDraft)) {
@@ -920,14 +926,17 @@ export function CaptureModal({
   }
 
   function toggleTag(tag: string) {
+    const normalizedTag = normalizeTagLabel(tag);
     setDraft((current) => {
-      const hasTag = current.tags.includes(tag);
+      const hasTag = current.tags.some((item) => normalizeTagLabel(item) === normalizedTag);
       const isGoalTag = goalTagSet.has(tag);
-      const baseTags = isGoalTag ? current.tags.filter((item) => !goalTagSet.has(item)) : current.tags;
+      const baseTags = isGoalTag
+        ? current.tags.filter((item) => !goalTagOptions.some((goalTag) => normalizeTagLabel(goalTag) === normalizeTagLabel(item)))
+        : current.tags;
 
       return {
         ...current,
-        tags: hasTag ? current.tags.filter((item) => item !== tag) : [...baseTags, tag],
+        tags: hasTag ? current.tags.filter((item) => normalizeTagLabel(item) !== normalizedTag) : [...baseTags, tag],
       };
     });
   }
@@ -1414,7 +1423,7 @@ export function CaptureModal({
                       key={tag}
                       label={tag}
                       onPress={() => toggleTag(tag)}
-                      variant={draft.tags.includes(tag) ? "primary" : "ghost"}
+                      variant={draft.tags.some((item) => normalizeTagLabel(item) === normalizeTagLabel(tag)) ? "primary" : "ghost"}
                       fullWidth={false}
                       size="compact"
                     />
@@ -1617,7 +1626,7 @@ export function CaptureModal({
                 </View>
               </View>
 
-              <View style={styles.chipSection}>
+              <View style={[styles.chipSection, styles.followUpDateBox]}>
                 <Typography variant="caption">Suggested follow-up</Typography>
                 <Typography variant="body" style={styles.helperText}>
                   Suggested from event type: {suggestedPresetLabel}
@@ -1642,9 +1651,10 @@ export function CaptureModal({
                   />
                 </View>
                 {draft.nextFollowUpAt ? (
-                  <Typography variant="caption" style={styles.tagSummary}>
-                    Follow-up date: {formatFollowUpDate(draft.nextFollowUpAt)}
-                  </Typography>
+                  <View style={styles.followUpDateSummary}>
+                    <Typography variant="caption" style={styles.followUpDateLabel}>Selected date</Typography>
+                    <Typography variant="h2">{formatFollowUpDate(draft.nextFollowUpAt)}</Typography>
+                  </View>
                 ) : null}
                 {draft.followUpPreset === "custom" ? (
                   <View style={styles.metaInputBlock}>
@@ -1924,6 +1934,24 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   chipSection: {
     gap: 10,
+  },
+  followUpDateBox: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.primaryAction,
+    backgroundColor: colors.successSoft,
+    padding: 14,
+  },
+  followUpDateSummary: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 14,
+    gap: 6,
+  },
+  followUpDateLabel: {
+    color: colors.primaryAction,
   },
   calendarSlotStack: {
     gap: 8,

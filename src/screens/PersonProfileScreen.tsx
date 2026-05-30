@@ -118,6 +118,7 @@ export function PersonProfileScreen({
   const [isDeleting, setDeleting] = useState(false);
   const [editorMode, setEditorMode] = useState<CaptureMode>("createInteraction");
   const [editorDraft, setEditorDraft] = useState<Partial<ParsedPersonDraft> | null>(null);
+  const [editorAutoOpenScan, setEditorAutoOpenScan] = useState(false);
   const [isUpdateModalOpen, setUpdateModalOpen] = useState(false);
   const [updatePerson, setUpdatePerson] = useState<(typeof people)[number] | null>(null);
   const [updateDraft, setUpdateDraft] = useState<UpdateDraftState>({
@@ -507,6 +508,7 @@ export function PersonProfileScreen({
 
   function closePeopleCapture() {
     void clearPeopleCaptureState();
+    setEditorAutoOpenScan(false);
     setCaptureOpen(false);
   }
 
@@ -581,6 +583,7 @@ export function PersonProfileScreen({
     };
     setEditorMode("createPerson");
     setEditorDraft(nextDraft);
+    setEditorAutoOpenScan(false);
     void AsyncStorage.setItem(
       PEOPLE_CAPTURE_STATE_STORAGE_KEY,
       JSON.stringify({ isOpen: true, mode: "createPerson", selectedPersonId: null, draft: nextDraft } satisfies SavedPeopleCaptureState)
@@ -598,7 +601,7 @@ export function PersonProfileScreen({
     openCreatePerson(nameFromSearch);
   }
 
-  function openEditPerson(person = selectedPerson) {
+  function openEditPerson(person = selectedPerson, options?: { autoOpenScan?: boolean }) {
     if (!person) {
       return;
     }
@@ -622,6 +625,7 @@ export function PersonProfileScreen({
     setSelectedPersonId(person.id);
     setEditorMode("edit");
     setEditorDraft(nextDraft);
+    setEditorAutoOpenScan(Boolean(options?.autoOpenScan));
     void AsyncStorage.setItem(
       PEOPLE_CAPTURE_STATE_STORAGE_KEY,
       JSON.stringify({ isOpen: true, mode: "edit", selectedPersonId: person.id, draft: nextDraft } satisfies SavedPeopleCaptureState)
@@ -793,6 +797,7 @@ export function PersonProfileScreen({
 
         if (!options?.addAnother) {
           setCaptureOpen(false);
+          setEditorAutoOpenScan(false);
           await clearPeopleCaptureState();
         }
         await loadProfileData();
@@ -880,6 +885,7 @@ export function PersonProfileScreen({
 
       if (!options?.addAnother && !options?.keepOpen) {
         setCaptureOpen(false);
+        setEditorAutoOpenScan(false);
         await clearPeopleCaptureState();
       }
       await loadProfileData();
@@ -983,6 +989,17 @@ export function PersonProfileScreen({
     }
   }
 
+  async function openLinkedInSearch(person: (typeof people)[number]) {
+    const query = [person.name, person.company].filter(Boolean).join(" ").trim();
+    if (!query) {
+      Alert.alert("Nothing to search", "Add a name or company first.");
+      return;
+    }
+
+    const url = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(query)}`;
+    await handleOpenExternal(url, `LinkedIn search for ${person.name}`);
+  }
+
 
   function getMomentLabel(count: number) {
     return `${count} logged ${count === 1 ? "moment" : "moments"}`;
@@ -1011,16 +1028,58 @@ export function PersonProfileScreen({
           <View style={styles.contactDetailsCopy}>
             <Typography variant="caption">Contact details</Typography>
             <Typography variant="body" style={styles.confirmMeta}>
-              {missingDetails ? "Incomplete. Add how to reach them when you have a second." : "Ready for follow-up."}
+              {missingDetails ? `Incomplete. How should you reach ${person.name}?` : "Ready for follow-up."}
             </Typography>
           </View>
           <Button label="Edit" onPress={() => openEditPerson(person)} variant="ghost" fullWidth={false} size="compact" />
         </View>
+        {missingDetails ? (
+          <View style={styles.identityActionRow}>
+            <Button label="Scan badge" onPress={() => openEditPerson(person, { autoOpenScan: true })} fullWidth={false} size="compact" />
+            <Button label="Search LinkedIn" onPress={() => void openLinkedInSearch(person)} variant="ghost" fullWidth={false} size="compact" />
+            <Button label="Scan QR" onPress={() => openEditPerson(person, { autoOpenScan: true })} variant="ghost" fullWidth={false} size="compact" />
+          </View>
+        ) : null}
         <View style={styles.metaRow}>
           <Typography variant="caption">{formatPreferredChannelLabel(person.preferredChannel, person.preferredChannelOther)}</Typography>
           {person.linkedinUrl ? <Typography variant="caption">LinkedIn saved</Typography> : null}
           {person.email ? <Typography variant="caption">Email saved</Typography> : null}
           {person.phoneNumber ? <Typography variant="caption">Phone saved</Typography> : null}
+        </View>
+      </View>
+    );
+  }
+
+  function renderProfileActionStack(person: (typeof people)[number], compact = false) {
+    return (
+      <View style={compact ? styles.profileActionStackCompact : styles.profileActionStack}>
+        <View style={styles.profileActionGroup}>
+          <Typography variant="caption">Do now</Typography>
+          <View style={styles.secondaryActionRow}>
+            <Button label="Draft message" onPress={() => openFollowUpExecution(person)} fullWidth={false} size="compact" />
+            <Button
+              label="Set reminder"
+              onPress={() => person.nextFollowUpAt ? void handleAddToCalendar(person) : openLogUpdateForPerson(person)}
+              fullWidth={false}
+              size="compact"
+            />
+          </View>
+        </View>
+        <View style={styles.profileActionGroup}>
+          <Typography variant="caption">Optional logs</Typography>
+          <View style={styles.secondaryActionRow}>
+            <Button label="Verify identity" onPress={() => void openLinkedInSearch(person)} variant="ghost" fullWidth={false} size="compact" />
+            <Button label="Update status" onPress={() => openLogUpdateForPerson(person)} variant="ghost" fullWidth={false} size="compact" />
+            <Button label="Mark contacted" onPress={() => handleMarkContactedToday(person)} variant="ghost" fullWidth={false} size="compact" />
+          </View>
+        </View>
+        <View style={styles.adminLinkRow}>
+          <Pressable onPress={() => openEditPerson(person)} hitSlop={8}>
+            <Typography variant="caption" style={styles.adminLinkText}>Edit contact</Typography>
+          </Pressable>
+          <Pressable onPress={() => setPersonActionMenu(person)} hitSlop={8}>
+            <Typography variant="caption" style={styles.adminLinkText}>More</Typography>
+          </Pressable>
         </View>
       </View>
     );
@@ -1814,39 +1873,7 @@ export function PersonProfileScreen({
               ) : null}
               {searchQuery ? <Typography variant="caption">Search: {searchQuery}</Typography> : null}
 
-              {renderContactActionButtons(selectedPerson)}
-
-              <View style={styles.secondaryActionRow}>
-                <Button
-                  label="Draft message"
-                  onPress={() => openFollowUpExecution(selectedPerson)}
-                  fullWidth={false}
-                  size="compact"
-                />
-                {selectedPerson.nextFollowUpAt ? (
-                  <Button
-                    label="Add to calendar"
-                    onPress={() => void handleAddToCalendar(selectedPerson)}
-                    variant="ghost"
-                    fullWidth={false}
-                    size="compact"
-                  />
-                ) : null}
-                <Button
-                  label="✓ Reached out"
-                  onPress={() => handleMarkContactedToday(selectedPerson)}
-                  variant="ghost"
-                  fullWidth={false}
-                  size="compact"
-                />
-                <Button
-                  label="Edit"
-                  onPress={() => setPersonActionMenu(selectedPerson)}
-                  variant="ghost"
-                  fullWidth={false}
-                  size="compact"
-                />
-              </View>
+              {renderProfileActionStack(selectedPerson)}
 
               <Typography variant="body" style={styles.featureNote}>
                 {selectedPerson.lastInteractionNote}
@@ -1908,21 +1935,7 @@ export function PersonProfileScreen({
                         {renderContactDetailsSection(person, true)}
                         {person.relationshipStatus ? <Typography variant="caption">Status: {person.relationshipStatus}</Typography> : null}
                         {person.tags.length ? <Typography variant="caption">Tags: {person.tags.join(", ")}</Typography> : null}
-                        {renderContactActionButtons(person, true)}
-                        <View style={styles.secondaryActionRow}>
-                          <Button label="Draft message" onPress={() => openFollowUpExecution(person)} fullWidth={false} size="compact" />
-                          {person.nextFollowUpAt ? (
-                            <Button
-                              label="Add to calendar"
-                              onPress={() => void handleAddToCalendar(person)}
-                              variant="ghost"
-                              fullWidth={false}
-                              size="compact"
-                            />
-                          ) : null}
-                          <Button label="✓ Reached out" onPress={() => handleMarkContactedToday(person)} variant="ghost" fullWidth={false} size="compact" />
-                          <Button label="Edit" onPress={() => setPersonActionMenu(person)} variant="ghost" fullWidth={false} size="compact" />
-                        </View>
+                        {renderProfileActionStack(person, true)}
                       </View>
                     ) : null}
                   </>
@@ -2010,6 +2023,7 @@ export function PersonProfileScreen({
           showSaveAndAddAnother={editorMode !== "edit"}
           draftStorageKey={PEOPLE_CAPTURE_DRAFT_STORAGE_KEY}
           autosaveWithInitialDraft
+          autoOpenScan={editorAutoOpenScan}
         />
 
         <Modal visible={isUpdateModalOpen} animationType="slide" presentationStyle="pageSheet">
@@ -2895,6 +2909,28 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   contactDetailsCopy: {
     flex: 1,
     gap: 4,
+  },
+  identityActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  profileActionStack: {
+    gap: 12,
+  },
+  profileActionStackCompact: {
+    gap: 10,
+  },
+  profileActionGroup: {
+    gap: 8,
+  },
+  adminLinkRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 14,
+  },
+  adminLinkText: {
+    color: colors.textSecondary,
   },
   featureNote: {
     color: colors.textSecondary,
