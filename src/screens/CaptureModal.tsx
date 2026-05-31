@@ -29,6 +29,7 @@ import { QRScannerModal } from "../components/QRScannerModal";
 import { scanContactCardImage } from "../lib/cardScan";
 import { getDefaultCalendarDestination, openFollowUpInCalendar } from "../lib/calendar";
 import { generateFollowUpDraft } from "../lib/followUpDraft";
+import { LinkedInIdentityMatch, searchLinkedInProfiles } from "../lib/linkedinIdentity";
 import { parseScannedInput } from "../lib/scan";
 import { transcribeContactAudio } from "../lib/voice";
 
@@ -42,9 +43,11 @@ import {
   formatCategoryLabel,
   formatFollowUpDate,
   getSuggestedFollowUpPreset,
+  ensureSessionUserId,
   PersonPriority,
   PreferredChannel,
   toDateOnlyString,
+  updatePersonLinkedInUrl,
 } from "../lib/crm";
 import { layout, radius, useTheme, useThemedStyles } from "../theme/tokens";
 
@@ -150,7 +153,7 @@ export type LockedEventDraft = {
 type CaptureModalProps = {
   visible: boolean;
   onClose: () => void;
-  onSave: (draft: ParsedPersonDraft, options?: { addAnother?: boolean; keepOpen?: boolean }) => void | Promise<void>;
+  onSave: (draft: ParsedPersonDraft, options?: { addAnother?: boolean; keepOpen?: boolean }) => CaptureSaveResult | void | Promise<CaptureSaveResult | void>;
   title?: string;
   saveLabel?: string;
   isSaving?: boolean;
@@ -163,6 +166,10 @@ type CaptureModalProps = {
   autosaveWithInitialDraft?: boolean;
   showPostSaveActions?: boolean;
   autoOpenScan?: boolean;
+};
+
+export type CaptureSaveResult = {
+  personId?: string | null;
 };
 
 type SavedCaptureDraft = {
@@ -414,6 +421,13 @@ export function CaptureModal({
   const [hasHydratedSavedDraft, setHasHydratedSavedDraft] = useState(false);
   const [savedDraftForNextAction, setSavedDraftForNextAction] = useState<ParsedPersonDraft | null>(null);
   const [savedDraftMessage, setSavedDraftMessage] = useState("");
+  const [savedPersonIdForNextAction, setSavedPersonIdForNextAction] = useState<string | null>(null);
+  const [isSavedDraftSent, setSavedDraftSent] = useState(false);
+  const [isSavedDraftCalendarSecured, setSavedDraftCalendarSecured] = useState(false);
+  const [isSavedDraftIdentityConfirmed, setSavedDraftIdentityConfirmed] = useState(false);
+  const [identityMatches, setIdentityMatches] = useState<LinkedInIdentityMatch[]>([]);
+  const [isSearchingIdentity, setSearchingIdentity] = useState(false);
+  const [identitySearchError, setIdentitySearchError] = useState<string | null>(null);
   const [isGeneratingSavedDraftMessage, setGeneratingSavedDraftMessage] = useState(false);
   const [extractionNotice, setExtractionNotice] = useState<ExtractionNotice | null>(null);
   const [captureReadyMessage, setCaptureReadyMessage] = useState("");
@@ -509,6 +523,12 @@ export function CaptureModal({
       setIsQrScannerVisible(false);
       setSavedDraftForNextAction(savedDraft?.savedDraftForNextAction || null);
       setSavedDraftMessage(savedDraft?.savedDraftMessage || "");
+      setSavedPersonIdForNextAction(null);
+      setSavedDraftSent(false);
+      setSavedDraftCalendarSecured(false);
+      setSavedDraftIdentityConfirmed(Boolean(savedDraft?.draft?.linkedinUrl));
+      setIdentityMatches([]);
+      setIdentitySearchError(null);
       setExtractionNotice(null);
       setCaptureReadyMessage("");
       setCaptureStage(autoOpenScan ? "contact" : showQuickCapture ? "capture" : "review");
@@ -542,6 +562,14 @@ export function CaptureModal({
 
     void persistDraft();
   }, [activeMethod, autosaveWithInitialDraft, draft, draftStorageKey, hasHydratedSavedDraft, initialDraft, isFollowUpManuallySet, pasteInput, savedDraftForNextAction, savedDraftMessage, visible]);
+
+  useEffect(() => {
+    if (!savedDraftForNextAction || savedDraftForNextAction.linkedinUrl.trim() || !savedDraftForNextAction.name.trim()) {
+      return;
+    }
+
+    void runIdentitySearch(savedDraftForNextAction);
+  }, [savedDraftForNextAction?.name, savedDraftForNextAction?.company, savedDraftForNextAction?.event, savedDraftForNextAction?.linkedinUrl]);
 
   useEffect(() => {
     if (!visible || isFollowUpManuallySet) {
@@ -1002,6 +1030,82 @@ export function CaptureModal({
     }
   }
 
+  function resetPostSaveState() {
+    setSavedDraftForNextAction(null);
+    setSavedDraftMessage("");
+    setSavedPersonIdForNextAction(null);
+    setSavedDraftSent(false);
+    setSavedDraftCalendarSecured(false);
+    setSavedDraftIdentityConfirmed(false);
+    setIdentityMatches([]);
+    setIdentitySearchError(null);
+    setSearchingIdentity(false);
+    setGeneratingSavedDraftMessage(false);
+  }
+
+  function buildLinkedInSearchUrl(targetDraft: ParsedPersonDraft) {
+    const terms = [
+      targetDraft.name,
+      targetDraft.company,
+      targetDraft.event && targetDraft.event !== "No event" ? targetDraft.event : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(terms || targetDraft.name)}`;
+  }
+
+  async function runIdentitySearch(targetDraft: ParsedPersonDraft) {
+    if (!targetDraft.name.trim()) {
+      return;
+    }
+
+    try {
+      setSearchingIdentity(true);
+      setIdentitySearchError(null);
+      const result = await searchLinkedInProfiles({
+        name: targetDraft.name,
+        company: targetDraft.company,
+        eventName: targetDraft.event && targetDraft.event !== "No event" ? targetDraft.event : null,
+      });
+      setIdentityMatches(result.matches);
+    } catch (error) {
+      setIdentityMatches([]);
+      setIdentitySearchError(error instanceof Error ? error.message : "LinkedIn search failed.");
+    } finally {
+      setSearchingIdentity(false);
+    }
+  }
+
+  async function handleSelectIdentityMatch(match: LinkedInIdentityMatch) {
+    if (!savedDraftForNextAction) {
+      return;
+    }
+
+    setSavedDraftIdentityConfirmed(true);
+    setSavedDraftForNextAction({
+      ...savedDraftForNextAction,
+      linkedinUrl: match.url,
+      preferredChannel: savedDraftForNextAction.preferredChannel || "linkedin",
+    });
+
+    if (!savedPersonIdForNextAction) {
+      return;
+    }
+
+    try {
+      const userId = await ensureSessionUserId();
+      await updatePersonLinkedInUrl({
+        userId,
+        personId: savedPersonIdForNextAction,
+        linkedinUrl: match.url,
+      });
+    } catch (error) {
+      Alert.alert("LinkedIn not saved", error instanceof Error ? error.message : "The match was selected, but could not be saved.");
+    }
+  }
+
   async function handleSave(addAnother = false) {
     if (isSaving || !canSave) {
       return;
@@ -1014,12 +1118,16 @@ export function CaptureModal({
       void AsyncStorage.removeItem(draftStorageKey);
     }
 
-    await onSave(cleanDraft, { addAnother, keepOpen: shouldShowNextActions });
+    const saveResult = await onSave(cleanDraft, { addAnother, keepOpen: shouldShowNextActions });
 
     if (shouldShowNextActions) {
       setSavedDraftForNextAction(cleanDraft);
+      setSavedPersonIdForNextAction(saveResult && typeof saveResult === "object" ? saveResult.personId || null : null);
       const fallbackMessage = buildPostCaptureMessage(cleanDraft);
       setSavedDraftMessage(fallbackMessage);
+      setSavedDraftSent(false);
+      setSavedDraftCalendarSecured(false);
+      setSavedDraftIdentityConfirmed(Boolean(cleanDraft.linkedinUrl));
       void improveSavedDraftMessage(cleanDraft, fallbackMessage);
       return;
     }
@@ -1034,6 +1142,7 @@ export function CaptureModal({
       void AsyncStorage.removeItem(draftStorageKey);
     }
 
+    resetPostSaveState();
     onClose();
   }
 
@@ -1103,8 +1212,9 @@ export function CaptureModal({
     try {
       if (preferredChannel === "whatsapp" && savedDraftForNextAction.phoneNumber.trim()) {
         const phone = normalizePhoneForUrl(savedDraftForNextAction.phoneNumber);
+        await Clipboard.setStringAsync(message);
+        setSavedDraftSent(true);
         await Linking.openURL(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`);
-        returnToCaptureReady(savedDraftForNextAction.name);
         return;
       }
 
@@ -1112,34 +1222,34 @@ export function CaptureModal({
         const subject = savedDraftForNextAction.event && savedDraftForNextAction.event !== "No event"
           ? `Following up from ${savedDraftForNextAction.event}`
           : `Following up with ${savedDraftForNextAction.name}`;
+        setSavedDraftSent(true);
         await Linking.openURL(
           `mailto:${encodeURIComponent(savedDraftForNextAction.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`
         );
-        returnToCaptureReady(savedDraftForNextAction.name);
         return;
       }
 
-      if (preferredChannel === "linkedin" && savedDraftForNextAction.linkedinUrl.trim()) {
+      if (preferredChannel === "linkedin") {
         await Clipboard.setStringAsync(message);
-        await Linking.openURL(savedDraftForNextAction.linkedinUrl);
+        setSavedDraftSent(true);
+        await Linking.openURL(savedDraftForNextAction.linkedinUrl.trim() || buildLinkedInSearchUrl(savedDraftForNextAction));
         Alert.alert("Message copied", "Paste the draft into LinkedIn when the profile opens.");
-        returnToCaptureReady(savedDraftForNextAction.name);
         return;
       }
 
       if (preferredChannel === "phone" && savedDraftForNextAction.phoneNumber.trim()) {
         await Clipboard.setStringAsync(message);
+        setSavedDraftSent(true);
         await Linking.openURL(`sms:${savedDraftForNextAction.phoneNumber}?body=${encodeURIComponent(message)}`);
-        returnToCaptureReady(savedDraftForNextAction.name);
         return;
       }
 
       await handleCopySavedDraftMessage();
-      returnToCaptureReady(savedDraftForNextAction.name);
+      setSavedDraftSent(true);
     } catch {
       await Clipboard.setStringAsync(message);
+      setSavedDraftSent(true);
       Alert.alert("Message copied", "Could not open the app, so the draft is copied instead.");
-      returnToCaptureReady(savedDraftForNextAction.name);
     }
   }
 
@@ -1161,14 +1271,28 @@ export function CaptureModal({
         },
         await getDefaultCalendarDestination()
       );
-      returnToCaptureReady(savedDraftForNextAction.name);
+      setSavedDraftCalendarSecured(true);
     } catch (error) {
       Alert.alert("Calendar failed", error instanceof Error ? error.message : "Could not add this reminder.");
     }
   }
 
   function handleSavedDraftAddAnother() {
-    returnToCaptureReady(savedDraftForNextAction?.name);
+    const savedName = savedDraftForNextAction?.name;
+    resetPostSaveState();
+    returnToCaptureReady(savedName);
+  }
+
+  async function handleSearchSavedDraftIdentity() {
+    if (!savedDraftForNextAction) {
+      return;
+    }
+
+    await Linking.openURL(buildLinkedInSearchUrl(savedDraftForNextAction));
+  }
+
+  function handleConfirmSavedDraftIdentity() {
+    setSavedDraftIdentityConfirmed(true);
   }
 
   function renderPostSaveActions() {
@@ -1182,7 +1306,7 @@ export function CaptureModal({
           <Typography variant="caption">What next?</Typography>
           <Typography variant="h1">{savedDraftForNextAction.name} is saved.</Typography>
           <Typography variant="body" style={styles.helperText}>
-            Close the loop now, add one more person, or leave it for wrap-up.
+            Close the loop now, or jump straight into the next capture.
           </Typography>
         </View>
 
@@ -1201,19 +1325,76 @@ export function CaptureModal({
           />
         </Card>
 
+        <Card style={[
+          styles.identityNudgeCard,
+          isSavedDraftIdentityConfirmed || savedDraftForNextAction.linkedinUrl ? styles.identityNudgeConfirmed : null,
+        ]}>
+          <View style={styles.identityNudgeHeader}>
+            <View style={styles.identityNudgeCopy}>
+              <Typography variant="caption">Identity nudge</Typography>
+              <Typography variant="body" style={styles.helperText}>
+                {savedDraftForNextAction.linkedinUrl
+                  ? `${savedDraftForNextAction.name}'s LinkedIn is saved.`
+                  : isSearchingIdentity
+                    ? `Finding possible LinkedIn matches for ${savedDraftForNextAction.name}...`
+                    : identityMatches.length
+                      ? `I found ${identityMatches.length} possible ${identityMatches.length === 1 ? "match" : "matches"} for ${savedDraftForNextAction.name}${savedDraftForNextAction.company ? ` at ${savedDraftForNextAction.company}` : ""}. Tap to confirm.`
+                      : `I think this is ${savedDraftForNextAction.name}${savedDraftForNextAction.company ? ` (${savedDraftForNextAction.company})` : ""}.`}
+              </Typography>
+            </View>
+            {(isSavedDraftIdentityConfirmed || savedDraftForNextAction.linkedinUrl) ? (
+              <View style={styles.securedPill}>
+                <Typography variant="caption" style={styles.securedPillText}>Confirmed</Typography>
+              </View>
+            ) : null}
+          </View>
+          {identitySearchError ? (
+            <Typography variant="caption" style={styles.errorText}>
+              {identitySearchError}
+            </Typography>
+          ) : null}
+          {!savedDraftForNextAction.linkedinUrl && identityMatches.length ? (
+            <View style={styles.identityMatchStack}>
+              {identityMatches.map((match) => (
+                <Pressable key={match.url} onPress={() => void handleSelectIdentityMatch(match)} style={styles.identityMatchCard}>
+                  <Typography variant="body" style={styles.identityMatchTitle} numberOfLines={1}>
+                    {match.title}
+                  </Typography>
+                  <Typography variant="caption" style={styles.helperText} numberOfLines={2}>
+                    {match.snippet || match.url}
+                  </Typography>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          {!savedDraftForNextAction.linkedinUrl ? (
+            <View style={styles.secondaryCaptureRow}>
+              <Button label="Confirm" onPress={handleConfirmSavedDraftIdentity} fullWidth={false} size="compact" />
+              <Button
+                label={identityMatches.length ? "Open LinkedIn" : "Search LinkedIn"}
+                onPress={() => identityMatches.length ? void handleSearchSavedDraftIdentity() : void runIdentitySearch(savedDraftForNextAction)}
+                variant="ghost"
+                fullWidth={false}
+                size="compact"
+                loading={isSearchingIdentity}
+              />
+            </View>
+          ) : null}
+        </Card>
+
         <View style={styles.postSaveActionGrid}>
-          <Button label="Review later" onPress={handleSavedDraftAddAnother} />
           <Button
-            label={getPostSavePrimaryAction(savedDraftForNextAction) === "Copy message" ? "Send now: copy" : `Send now: ${getPostSavePrimaryAction(savedDraftForNextAction)}`}
+            label={isSavedDraftSent ? "Message secured" : "Send now"}
             onPress={() => void handlePostSavePrimaryAction()}
-            variant="ghost"
+            style={isSavedDraftSent ? styles.securedActionButton : null}
           />
           <Button
-            label={savedDraftForNextAction.nextFollowUpAt ? `Add to calendar: ${formatFollowUpDate(savedDraftForNextAction.nextFollowUpAt)}` : "Add calendar reminder later"}
+            label={isSavedDraftCalendarSecured ? "Saved to calendar" : savedDraftForNextAction.nextFollowUpAt ? `Add to calendar: ${formatFollowUpDate(savedDraftForNextAction.nextFollowUpAt)}` : "Add calendar reminder"}
             onPress={() => void handlePostSaveCalendarAction()}
-            variant="ghost"
+            variant={isSavedDraftCalendarSecured ? "primary" : "ghost"}
+            style={isSavedDraftCalendarSecured ? styles.securedActionButton : null}
           />
-          <Button label="Save & add another" onPress={handleSavedDraftAddAnother} variant="ghost" />
+          <Button label="Capture next" onPress={handleSavedDraftAddAnother} />
           <Button label="Done" onPress={handleClose} variant="ghost" />
         </View>
       </Card>
@@ -1687,7 +1868,7 @@ export function CaptureModal({
                 <>
                   <Button label={saveLabel} onPress={() => void handleSave(false)} loading={isSaving} disabled={!canSave} />
                   {showSaveAndAddAnother ? (
-                    <Button label="Save & Add Another" onPress={() => void handleSave(true)} loading={isSaving} disabled={!canSave} variant="ghost" />
+                    <Button label="Capture next" onPress={() => void handleSave(true)} loading={isSaving} disabled={!canSave} variant="ghost" />
                   ) : null}
                   <Button label="Start over" onPress={resetForAnotherCapture} variant="ghost" />
                 </>
@@ -1696,7 +1877,7 @@ export function CaptureModal({
                 <>
               <Button label={saveLabel} onPress={() => void handleSave(false)} loading={isSaving} disabled={!canSave} />
               {showSaveAndAddAnother ? (
-                <Button label="Save & Add Another" onPress={() => void handleSave(true)} loading={isSaving} disabled={!canSave} variant="ghost" />
+                <Button label="Capture next" onPress={() => void handleSave(true)} loading={isSaving} disabled={!canSave} variant="ghost" />
               ) : null}
               <Button label="Cancel" onPress={handleClose} variant="ghost" />
                 </>
@@ -1974,6 +2155,52 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   nextActionPreviewCard: {
     gap: 8,
     backgroundColor: colors.surfaceMuted,
+  },
+  identityNudgeCard: {
+    gap: 12,
+    backgroundColor: colors.surface,
+  },
+  identityNudgeConfirmed: {
+    borderColor: colors.primaryAction,
+    backgroundColor: colors.successSoft,
+  },
+  identityNudgeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  identityNudgeCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  identityMatchStack: {
+    gap: 8,
+  },
+  identityMatchCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    padding: 12,
+    gap: 4,
+  },
+  identityMatchTitle: {
+    color: colors.textPrimary,
+    fontWeight: "700",
+  },
+  securedPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryAction,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  securedPillText: {
+    color: colors.onPrimary,
+  },
+  securedActionButton: {
+    backgroundColor: colors.primaryAction,
+    borderColor: colors.primaryAction,
   },
   postSaveActionGrid: {
     gap: 10,

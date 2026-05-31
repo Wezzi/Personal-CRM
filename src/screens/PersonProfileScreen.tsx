@@ -30,6 +30,7 @@ import {
   parseDateOnlyString,
   updateInteraction,
   updatePersonDetails,
+  updatePersonLinkedInUrl,
   updatePersonNextFollowUpAt,
   isContactStale,
 } from "../lib/crm";
@@ -38,6 +39,7 @@ import { CalendarDestination, CalendarSuggestedSlot, getAvailableCalendarDestina
 import { clearPendingExternalAction, getPendingExternalAction, PendingExternalAction, setPendingExternalAction } from "../lib/externalActionFlow";
 import { captureAnalyticsEvent } from "../lib/analytics";
 import { generateFollowUpDraft } from "../lib/followUpDraft";
+import { searchLinkedInProfiles } from "../lib/linkedinIdentity";
 
 type SortMode = "recent" | "stale" | "name" | "frequency";
 type CaptureMode = "createInteraction" | "createPerson" | "edit";
@@ -813,7 +815,7 @@ export function PersonProfileScreen({
         if (!options?.addAnother) {
           Alert.alert("Contact updated", `${draft.name} is ready for follow-up.`);
         }
-        return;
+        return { personId: selectedPerson.id };
       }
 
       let activePersonId = selectedPerson?.id || null;
@@ -892,6 +894,7 @@ export function PersonProfileScreen({
       if (!options?.addAnother && !options?.keepOpen) {
         Alert.alert("Timeline updated", selectedPerson ? `${selectedPerson.name}'s next step is saved.` : "New contact added with context.");
       }
+      return { personId: activePersonId };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save interaction.";
       Alert.alert("Could not save update", message);
@@ -996,8 +999,53 @@ export function PersonProfileScreen({
       return;
     }
 
-    const url = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(query)}`;
-    await handleOpenExternal(url, `LinkedIn search for ${person.name}`);
+    const fallbackUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(
+      [person.name, person.company, currentEvent?.name].filter(Boolean).join(" ")
+    )}`;
+
+    try {
+      const result = await searchLinkedInProfiles({
+        name: person.name,
+        company: person.company,
+        eventName: currentEvent?.name || person.lastEventName || null,
+      });
+
+      if (!result.matches.length) {
+        await handleOpenExternal(fallbackUrl, `LinkedIn search for ${person.name}`);
+        return;
+      }
+
+      Alert.alert(
+        `Possible matches for ${person.name}`,
+        "Tap the right profile to save it.",
+        [
+          ...result.matches.slice(0, 3).map((match) => ({
+            text: match.title.length > 42 ? `${match.title.slice(0, 39)}...` : match.title,
+            onPress: () => {
+              void (async () => {
+                try {
+                  const userId = await ensureSessionUserId();
+                  await updatePersonLinkedInUrl({ userId, personId: person.id, linkedinUrl: match.url });
+                  await loadProfileData();
+                  Alert.alert("Identity saved", `${person.name}'s LinkedIn profile is saved.`);
+                } catch (error) {
+                  Alert.alert("Could not save LinkedIn", error instanceof Error ? error.message : "Try again later.");
+                }
+              })();
+            },
+          })),
+          {
+            text: "Open LinkedIn",
+            onPress: () => {
+              void handleOpenExternal(fallbackUrl, `LinkedIn search for ${person.name}`);
+            },
+          },
+          { text: "Cancel", style: "cancel" as const },
+        ]
+      );
+    } catch {
+      await handleOpenExternal(fallbackUrl, `LinkedIn search for ${person.name}`);
+    }
   }
 
 
@@ -1861,7 +1909,6 @@ export function PersonProfileScreen({
                 <Typography variant="caption">Status: {selectedPerson.relationshipStatus}</Typography>
               ) : null}
               {renderPreferredChannelPill(selectedPerson)}
-              {renderContactDetailsSection(selectedPerson)}
               {selectedPerson.tags.length ? (
                 <View style={styles.tagPillRow}>
                   {selectedPerson.tags.map((tag) => (
@@ -1932,7 +1979,6 @@ export function PersonProfileScreen({
                           <Typography variant="caption">{getMomentLabel(person.interactionCount)}</Typography>
                         </View>
                         {renderPreferredChannelPill(person)}
-                        {renderContactDetailsSection(person, true)}
                         {person.relationshipStatus ? <Typography variant="caption">Status: {person.relationshipStatus}</Typography> : null}
                         {person.tags.length ? <Typography variant="caption">Tags: {person.tags.join(", ")}</Typography> : null}
                         {renderProfileActionStack(person, true)}

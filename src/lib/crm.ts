@@ -550,6 +550,24 @@ export async function updatePersonNextFollowUpAt(input: {
   assertNoError(error);
 }
 
+export async function updatePersonLinkedInUrl(input: {
+  userId: string;
+  personId: string;
+  linkedinUrl: string;
+}) {
+  const client = assertClient();
+
+  const { error } = await client
+    .from("persons")
+    .update({
+      linkedin_url: normalizeLinkedInUrl(input.linkedinUrl),
+    })
+    .eq("user_id", input.userId)
+    .eq("id", input.personId);
+
+  assertNoError(error);
+}
+
 export async function updateInteraction(input: {
   userId: string;
   interactionId: string;

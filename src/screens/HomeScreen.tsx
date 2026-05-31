@@ -196,9 +196,10 @@ export function HomeScreen({
       const userId = await ensureSessionUserId();
 
       if (editingPerson) {
+        const editingPersonId = editingPerson.id;
         await updatePersonDetails({
           userId,
-          personId: editingPerson.id,
+          personId: editingPersonId,
           name: draft.name,
           company: draft.company,
           linkedinUrl: draft.linkedinUrl,
@@ -216,7 +217,7 @@ export function HomeScreen({
         await AsyncStorage.setItem(HOME_CAPTURE_OPEN_STORAGE_KEY, "false");
         await loadData();
         Alert.alert("Contact updated", `${draft.name} is up to date.`);
-        return;
+        return { personId: editingPersonId };
       }
 
       const person = await createPerson(
@@ -271,6 +272,7 @@ export function HomeScreen({
       if (!options?.addAnother && !options?.keepOpen) {
         Alert.alert("Contact added", `${draft.name} saved${eventName && eventName !== "No event" ? ` to ${eventName}` : ""}.`);
       }
+      return { personId: person.id };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save interaction.";
       Alert.alert("Could not save contact", message);
@@ -301,8 +303,14 @@ export function HomeScreen({
   }
 
   function renderPersonCard(person: (typeof people)[number], variant: "default" | "muted" = "default") {
+    const isSecured = Boolean(person.nextFollowUpAt && (person.linkedinUrl || person.email || person.phoneNumber));
+
     return (
-      <Card key={person.id} style={[styles.connectionCard, variant === "muted" ? styles.mutedCard : null]}>
+      <Card key={person.id} style={[
+        styles.connectionCard,
+        variant === "muted" ? styles.mutedCard : null,
+        isSecured ? styles.securedConnectionCard : null,
+      ]}>
         <View style={styles.connectionHeader}>
           <View style={styles.connectionMain}>
             <Typography variant="h2">{person.name}</Typography>
@@ -311,8 +319,10 @@ export function HomeScreen({
             </Typography>
           </View>
           <View style={styles.cardActions}>
-            <View style={styles.statusPill}>
-              <Typography variant="caption" style={styles.statusPillText}>{person.statusLabel}</Typography>
+            <View style={[styles.statusPill, isSecured ? styles.securedStatusPill : null]}>
+              <Typography variant="caption" style={[styles.statusPillText, isSecured ? styles.securedStatusPillText : null]}>
+                {isSecured ? "Secured" : person.statusLabel}
+              </Typography>
             </View>
             <PersonQuickActionsButton person={person} onChanged={loadData} onEdit={() => openEditPerson(person)} />
           </View>
@@ -809,6 +819,10 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   connectionCard: {
     gap: 10,
   },
+  securedConnectionCard: {
+    borderColor: colors.primaryAction,
+    backgroundColor: colors.successSoft,
+  },
   mutedCard: {
     backgroundColor: colors.surfaceMuted,
   },
@@ -836,6 +850,14 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
   },
   statusPillText: {
     color: colors.textSecondary,
+  },
+  securedStatusPill: {
+    backgroundColor: colors.primaryAction,
+    borderColor: colors.primaryAction,
+  },
+  securedStatusPillText: {
+    color: colors.onPrimary,
+    fontWeight: "700",
   },
   cardActions: {
     flexDirection: "row",
