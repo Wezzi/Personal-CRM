@@ -32,6 +32,7 @@ import {
 } from "../lib/crm";
 import { buildCampaignUrl } from "../lib/campaign";
 import { buildPeopleCsv, exportCsvFile, getPeopleForEventExport } from "../lib/csvExport";
+import { generateFollowUpDraft } from "../lib/followUpDraft";
 import { exportSlackCanvas } from "../lib/slackExport";
 import { buildSlackCanvasSummary } from "../lib/slackCanvas";
 import { layout, useTheme, useThemedStyles } from "../theme/tokens";
@@ -62,6 +63,7 @@ type SavedEventEditorState = {
 
 const EVENT_EDITOR_STATE_STORAGE_KEY = "blackbook.event_editor_state";
 const IMPORTANT_TAG_PATTERN = /business|client|hire|hiring|partner|sponsor|investor|intro|meeting|opportunity|lead/i;
+type EventPerson = Awaited<ReturnType<typeof listPeopleInsights>>[number];
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear();
@@ -99,6 +101,20 @@ function getPersonMemoryReason(person: Awaited<ReturnType<typeof listPeopleInsig
   return "Worth reviewing";
 }
 
+function buildFallbackFollowUp(person: EventPerson, eventName?: string | null) {
+  const context = person.whatMatters || person.lastInteractionNote;
+  const nextStep = person.nextStep && person.nextStep.toLowerCase() !== "none yet" ? person.nextStep : "";
+  const event = eventName || person.lastEventName || "the event";
+
+  return [
+    `Hi ${person.name}, great meeting you at ${event}.`,
+    context ? `I was thinking about ${context}.` : null,
+    nextStep ? `Picking up on ${nextStep}, would be good to continue from there.` : "Would be good to continue the conversation when you have a moment.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function EventScreen({
   currentEvent,
   onSetCurrentEvent,
@@ -118,6 +134,12 @@ export function EventScreen({
   const [isExportingSlackCanvas, setExportingSlackCanvas] = useState(false);
   const [isCopyingCampaignLink, setCopyingCampaignLink] = useState(false);
   const [isCopyingSlackCanvas, setCopyingSlackCanvas] = useState(false);
+  const [isBulkFollowUpOpen, setBulkFollowUpOpen] = useState(false);
+  const [bulkFollowUpPeople, setBulkFollowUpPeople] = useState<EventPerson[]>([]);
+  const [bulkFollowUpIndex, setBulkFollowUpIndex] = useState(0);
+  const [bulkFollowUpDraft, setBulkFollowUpDraft] = useState("");
+  const [isGeneratingBulkDraft, setGeneratingBulkDraft] = useState(false);
+  const [bulkCopiedIds, setBulkCopiedIds] = useState<string[]>([]);
   const [deleteArmedEventId, setDeleteArmedEventId] = useState<string | null>(null);
   const [eventEditorMode, setEventEditorMode] = useState<"create" | "edit">("create");
   const [eventDraft, setEventDraft] = useState<EventEditorDraft>({ name: "", category: "", eventDate: getRelativeDateInputValue(0) });
@@ -286,6 +308,8 @@ export function EventScreen({
         .map((entry) => entry.person),
     [selectedEventPeople]
   );
+
+  const currentBulkFollowUpPerson = bulkFollowUpPeople[bulkFollowUpIndex] || null;
 
   const currentEventInsight = useMemo(() => {
     if (!currentEvent) {
@@ -780,6 +804,81 @@ export function EventScreen({
     }
   }
 
+  async function generateBulkFollowUpDraft(person: EventPerson, targetEvent = selectedEvent) {
+    const fallback = buildFallbackFollowUp(person, targetEvent?.name);
+    setBulkFollowUpDraft(fallback);
+
+    try {
+      setGeneratingBulkDraft(true);
+      const message = await generateFollowUpDraft({
+        name: person.name,
+        company: person.company,
+        eventName: targetEvent?.name || person.lastEventName,
+        whatMatters: person.whatMatters,
+        nextStep: person.nextStep,
+        relationshipGoal: person.tags[0] || null,
+        relationshipStatus: person.relationshipStatus,
+        preferredChannel: person.preferredChannel,
+        preferredChannelOther: person.preferredChannelOther,
+        lastInteractionNote: person.lastInteractionNote,
+      });
+      setBulkFollowUpDraft(message);
+    } catch {
+      setBulkFollowUpDraft(fallback);
+    } finally {
+      setGeneratingBulkDraft(false);
+    }
+  }
+
+  function openBulkFollowUpQueue(targetEvent = selectedEvent) {
+    if (!targetEvent) {
+      return;
+    }
+
+    const queue = (selectedEventOpenPeople.length ? selectedEventOpenPeople : selectedEventPeople).slice(0, 20);
+    if (!queue.length) {
+      Alert.alert("No people yet", "Capture people at this event before starting a follow-up queue.");
+      return;
+    }
+
+    setBulkFollowUpPeople(queue);
+    setBulkFollowUpIndex(0);
+    setBulkCopiedIds([]);
+    setBulkFollowUpOpen(true);
+    void generateBulkFollowUpDraft(queue[0], targetEvent);
+  }
+
+  function closeBulkFollowUpQueue() {
+    setBulkFollowUpOpen(false);
+    setBulkFollowUpPeople([]);
+    setBulkFollowUpIndex(0);
+    setBulkFollowUpDraft("");
+    setBulkCopiedIds([]);
+    setGeneratingBulkDraft(false);
+  }
+
+  function moveBulkFollowUp(delta: number) {
+    const nextIndex = bulkFollowUpIndex + delta;
+    const nextPerson = bulkFollowUpPeople[nextIndex];
+    if (!nextPerson) {
+      return;
+    }
+
+    setBulkFollowUpIndex(nextIndex);
+    void generateBulkFollowUpDraft(nextPerson);
+  }
+
+  async function copyCurrentBulkFollowUp() {
+    if (!currentBulkFollowUpPerson) {
+      return;
+    }
+
+    await Clipboard.setStringAsync(bulkFollowUpDraft || buildFallbackFollowUp(currentBulkFollowUpPerson, selectedEvent?.name));
+    setBulkCopiedIds((current) =>
+      current.includes(currentBulkFollowUpPerson.id) ? current : [...current, currentBulkFollowUpPerson.id]
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -991,6 +1090,15 @@ export function EventScreen({
                   fullWidth={false}
                   size="compact"
                 />
+                {!isCompactLayout ? (
+                  <Button
+                    label="Bulk follow-up"
+                    onPress={() => openBulkFollowUpQueue(selectedEvent)}
+                    fullWidth={false}
+                    size="compact"
+                    disabled={!selectedEventPeople.length}
+                  />
+                ) : null}
                 <Button
                   label="Copy event recap"
                   onPress={() => void handleCopySlackCanvas(selectedEvent)}
@@ -1209,6 +1317,90 @@ export function EventScreen({
             </View>
           </SafeAreaView>
         </Modal>
+
+        <Modal visible={isBulkFollowUpOpen} animationType="slide" presentationStyle="pageSheet">
+          <SafeAreaView style={styles.safeArea}>
+            <View style={styles.modalContainer}>
+              <View style={styles.headerRow}>
+                <View style={styles.headerCopy}>
+                  <Typography variant="caption">Bulk follow-up</Typography>
+                  <Typography variant="h1">Review & send queue</Typography>
+                  <Typography variant="body" style={styles.secondaryText}>
+                    {selectedEvent?.name || "Event"} · {bulkFollowUpPeople.length ? `${bulkFollowUpIndex + 1} of ${bulkFollowUpPeople.length}` : "No people"}
+                  </Typography>
+                </View>
+                <Button label="Close" onPress={closeBulkFollowUpQueue} variant="ghost" fullWidth={false} size="compact" />
+              </View>
+
+              {currentBulkFollowUpPerson ? (
+                <Card style={styles.modalCard}>
+                  <View style={styles.bulkPersonHeader}>
+                    <View style={styles.eventCopy}>
+                      <Typography variant="h2">{currentBulkFollowUpPerson.name}</Typography>
+                      <Typography variant="caption" style={styles.secondaryText}>
+                        {[currentBulkFollowUpPerson.company, currentBulkFollowUpPerson.tags[0]].filter(Boolean).join(" · ") || "No company yet"}
+                      </Typography>
+                    </View>
+                    {bulkCopiedIds.includes(currentBulkFollowUpPerson.id) ? (
+                      <View style={styles.copiedPill}>
+                        <Typography variant="caption" style={styles.copiedPillText}>Copied</Typography>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Typography variant="caption">Suggested message</Typography>
+                  {isGeneratingBulkDraft ? (
+                    <Typography variant="caption" style={styles.secondaryText}>Improving draft...</Typography>
+                  ) : null}
+                  <TextInput
+                    placeholder="Draft message"
+                    placeholderTextColor={colors.textTertiary}
+                    value={bulkFollowUpDraft}
+                    onChangeText={setBulkFollowUpDraft}
+                    style={[styles.searchInput, styles.bulkDraftInput]}
+                    multiline
+                  />
+
+                  <View style={styles.featureActions}>
+                    <Button
+                      label={bulkCopiedIds.includes(currentBulkFollowUpPerson.id) ? "Copied" : "Copy draft"}
+                      onPress={() => void copyCurrentBulkFollowUp()}
+                      fullWidth={false}
+                      size="compact"
+                      style={bulkCopiedIds.includes(currentBulkFollowUpPerson.id) ? styles.copiedAction : null}
+                    />
+                    <Button
+                      label="Previous"
+                      onPress={() => moveBulkFollowUp(-1)}
+                      variant="ghost"
+                      fullWidth={false}
+                      size="compact"
+                      disabled={bulkFollowUpIndex === 0}
+                    />
+                    <Button
+                      label={bulkFollowUpIndex >= bulkFollowUpPeople.length - 1 ? "Done" : "Next person"}
+                      onPress={() => {
+                        if (bulkFollowUpIndex >= bulkFollowUpPeople.length - 1) {
+                          closeBulkFollowUpQueue();
+                          return;
+                        }
+
+                        moveBulkFollowUp(1);
+                      }}
+                      variant="ghost"
+                      fullWidth={false}
+                      size="compact"
+                    />
+                  </View>
+                </Card>
+              ) : (
+                <Card style={styles.modalCard}>
+                  <Typography variant="body">No people in this queue yet.</Typography>
+                </Card>
+              )}
+            </View>
+          </SafeAreaView>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -1376,6 +1568,30 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"]) => StyleShe
     borderRadius: 16,
     backgroundColor: colors.surfaceMuted,
     padding: 12,
+  },
+  bulkPersonHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  bulkDraftInput: {
+    minHeight: 180,
+    textAlignVertical: "top",
+  },
+  copiedPill: {
+    borderRadius: 999,
+    backgroundColor: colors.primaryAction,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  copiedPillText: {
+    color: colors.onPrimary,
+    fontWeight: "700",
+  },
+  copiedAction: {
+    backgroundColor: colors.primaryAction,
+    borderColor: colors.primaryAction,
   },
   peopleStack: {
     gap: 12,
